@@ -9,6 +9,8 @@ GitMenorah is a desktop app for developers who run Claude Code and Codex every d
 
 Put the two together: give each agent its own worktree, let agents share context, then review and merge their work from the same window.
 
+**[⬇ Download GitMenorah](https://github.com/diepnghitinh/git-menorah/releases)** for macOS (Apple Silicon and Intel) or Windows x64.
+
 ![Left: Project · Git with branches, worktrees and the commit graph. Right: the canvas with two Claude Code sessions wired together](tools/git-desktop/imgs/showcase.png)
 
 ---
@@ -115,7 +117,11 @@ Open **GitMenorah → Accounts…** (or **Settings… → Accounts**) to sign in
 
 ## Get started
 
-### Requirements
+### Download
+
+Grab the latest `.dmg` (macOS) or `.zip` (Windows) from the [Releases page](https://github.com/diepnghitinh/git-menorah/releases). You still need [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and/or [Codex](https://github.com/openai/codex) installed to run agent nodes.
+
+### Requirements (build from source)
 
 - macOS (Apple Silicon or Intel) or Windows x64
 - Node.js 20+ and npm
