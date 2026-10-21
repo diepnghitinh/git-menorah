@@ -199,6 +199,11 @@
   button.gd-wtb:hover:not(:disabled){background:var(--hover);color:var(--text)}
   .gd-wtb .gk-ic{width:13px;height:13px;transition:transform .12s}
   .gd-wtb.shut .gk-ic{transform:rotate(-90deg)}
+  .gd-t td.rm{width:1px;padding:4px 10px 4px 0}
+  button.gd-rm{border:none;background:none;padding:4px;line-height:0;color:var(--faint);opacity:0}
+  .gd-t tr:hover button.gd-rm,button.gd-rm:focus-visible{opacity:1}
+  button.gd-rm:hover:not(:disabled){background:var(--hover);color:var(--text)}
+  .gd-rm .gk-ic{width:14px;height:14px}
   .gd-empty{padding:56px 24px;text-align:center;color:var(--faint)}
 
   .gk-body{--gk-side:240px;--gk-right:380px;position:relative;flex:1;min-height:0;display:grid;
@@ -251,18 +256,20 @@
     text-transform:uppercase;letter-spacing:.06em;cursor:pointer;user-select:none}
   .gk-sec-h:hover{color:var(--text)}
   .gk-sec-h .n{margin-left:auto;font-weight:500;color:var(--faint);font-family:var(--mono);letter-spacing:0}
-  .gk-sort{display:inline-flex;margin-left:auto;border:1px solid var(--border);border-radius:5px;overflow:hidden;text-transform:none;letter-spacing:0}
-  .gk-sort button{border:0;border-radius:0;background:var(--panel);padding:0 6px;font-size:10.5px;font-weight:500;line-height:16px;color:var(--muted)}
-  .gk-sort button + button{border-left:1px solid var(--border)}
-  .gk-sort button.on{background:var(--accent-soft,#eef4ff);color:var(--accent);font-weight:650}
+  .gk-sec-h .t{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  /* Sort button of Worktrees: opens a menu with the orders. Same box as + */
+  .gk-sort{flex:none;width:18px;height:18px;margin-left:auto;padding:0;display:inline-flex;align-items:center;justify-content:center;
+    border:1px solid transparent;border-radius:5px;background:none;color:var(--muted)}
+  .gk-sort:hover:not(:disabled){color:var(--text);background:var(--panel);border-color:var(--border)}
+  .gk-sort .gk-ic{width:12px;height:12px}
   .gk-sort + .n{margin-left:6px}
   /* Nút + ở tiêu đề mục Worktrees: tạo worktree mới từ cây chính */
   .gk-sec-add{flex:none;width:18px;height:18px;margin-left:auto;padding:0;display:inline-flex;align-items:center;justify-content:center;
     border:1px solid transparent;border-radius:5px;background:none;color:var(--muted)}
   .gk-sec-add:hover{color:var(--text);background:var(--panel);border-color:var(--border)}
   .gk-sec-add .gk-ic{width:12px;height:12px}
-  .gk-sec-add + .gk-sort{margin-left:4px}
-  .gk-sec-add ~ .n{margin-left:6px}
+  .gk-sort + .gk-sec-add{margin-left:0}
+  .gk-sec-add ~ .n{margin-left:4px}
   .gk-tw{width:10px;height:10px;color:var(--faint);transition:transform .12s}
   .gk-tw.shut{transform:rotate(-90deg)}
   .gk-item{display:flex;align-items:center;gap:6px;padding:2px 12px;cursor:pointer;white-space:nowrap;min-height:24px;user-select:none}
@@ -732,6 +739,7 @@ const GK_IC = {
   monitor: '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>',
   grid: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
+  sort: '<path d="M4 6h8M4 12h6M4 18h4"/><path d="M17 5v14M14 16l3 3 3-3"/>',
   more: '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
   ext: '<path d="M14 4h6v6"/><path d="M20 4 10 14"/><path d="M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5"/>',
   term: '<path d="m5 7 5 5-5 5"/><path d="M12 19h7"/>',
@@ -1344,7 +1352,7 @@ function gkRenderSide() {
   const tw = (shut) => ic('down', 'gk-tw' + (shut ? ' shut' : ''));
   const isShut = (k) => !q && gitClosed.has(k);
   const pad = (depth) => `style="padding-left:${12 + depth * 14}px"`;
-  const sec = (key, title, count, body, extra = '') => `<div class="gk-sec"><div class="gk-sec-h" data-sec="${key}">${tw(isShut(key))}${esc(title)}${extra}<span class="n">${count}</span></div>${isShut(key) ? '' : body}</div>`;
+  const sec = (key, title, count, body, extra = '') => `<div class="gk-sec"><div class="gk-sec-h" data-sec="${key}">${tw(isShut(key))}<span class="t">${esc(title)}</span>${extra}<span class="n">${count}</span></div>${isShut(key) ? '' : body}</div>`;
   // Cây theo dấu "/": feat/a, feat/b → thư mục feat. Lá xếp trước thư mục, cùng loại xếp theo tên.
   const tree = (items, prefix, leaf, depth) => {
     const dirs = new Map(), leaves = [];
@@ -1392,8 +1400,10 @@ function gkRenderSide() {
     abMini(a, b)}${dirty ? `<span class="chip warn" title="Uncommitted tracked files">${dirty}</span>` : ''}</div>` : '');
   const wtHtml = wtItem('', 'main worktree', main.branch, main.ahead, main.behind, main.tracked, d.mainCreated)
     + gkSortedWts(d.worktrees).map((w) => wtItem(w.rel, wtShort(w.rel), w.branch, w.ahead, w.behind, w.tracked, w.created)).join('');
-  const wtSort = d.worktrees.length > 1 ? `<span class="gk-sort">${[['new', 'Newest', 'Most recently created first'], ['az', 'A–Z', 'By name']]
-    .map(([k, t, tip]) => `<button data-wtsort="${k}" class="${gitUi.wtSort === k ? 'on' : ''}" title="${tip}">${t}</button>`).join('')}</span>` : '';
+  // Sort button: a click opens a menu with the orders (gkSortMenu).
+  const sortTip = `Sort worktrees: ${gitUi.wtSort === 'az' ? 'name (A–Z)' : 'newest first'}`;
+  const wtSort = d.worktrees.length > 1
+    ? `<button class="gk-sort" data-wtsort title="${sortTip}" aria-label="${sortTip}" aria-haspopup="menu">${ic('sort')}</button>` : '';
   const wtAdd = d.readOnly ? '' : `<button class="gk-sec-add" data-wtnew title="New worktree…" ${gitBusy ? 'disabled' : ''}>${ic('plus')}</button>`;
 
   const stashHtml = d.stash.filter((x) => match(x.subject)).map((x) => `<div class="gk-item ${gitPick === x.hash ? 'sel' : ''}" data-stash="${x.hash}"
@@ -1406,7 +1416,7 @@ function gkRenderSide() {
 
   el.innerHTML = sec('S:local', 'Local branches', d.branches.local.length, localHtml)
     + sec('S:remote', 'Remotes', d.branches.remote.length, remoteHtml)
-    + sec('S:wt', 'Worktrees', d.worktrees.length + 1, wtHtml, wtAdd + wtSort)
+    + sec('S:wt', 'Worktrees', d.worktrees.length + 1, wtHtml, wtSort + wtAdd)
     + sec('S:stash', 'Stashes', d.stash.length, stashHtml)
     + (d.submodules.length ? sec('S:sub', 'Submodules', d.submodules.length, subHtml) : '');
   gkRenderAgents();
@@ -2773,6 +2783,28 @@ async function gkRemoveGroup(g) {
   toast(`Removed ${g.name} from the list`);
   gitLoadList();
 }
+// Gỡ một repo khỏi project của nó (hay khỏi "Other repositories") — trang Projects.
+async function gkRemoveRepo(r) {
+  const g = r.group && gitGroups.find((x) => x.id === r.group);
+  const from = g ? g.name : 'Other repositories';
+  const ok = await gitDialog({
+    title: `Remove ${r.label} from ${from}?`, ok: 'Remove', okClass: 'danger',
+    html: `<div class="sub">Nothing on disk is deleted.${g ? ' Rescanning the project folder adds it back.' : ''}</div>
+      <div class="gd-name">${esc(r.dir)}</div>`,
+    beforeOk: async () => {
+      try {
+        if (g) await gkGroupCall({ id: g.id, drop: r.dir });
+        else { gitList = await api('/api/git/extra', { remove: r.dir }); gkLoadDash(); }
+        return true;
+      } catch (e) { toast(e.message); return false; }
+    },
+  });
+  if (!ok) return;
+  gkDashOpen.delete(r.id);
+  if (gitSel?.repo === r.id) gitSel = null;
+  toast(`Removed ${r.label} from ${from}`);
+  gitLoadList();
+}
 async function gkRemoveExtra() {
   const r = gitList.find((x) => x.id === gitSel.repo);
   try { gitList = await api('/api/git/extra', { remove: r.dir }); gitSel = null; gitLoadList(); } catch (e) { toast(e.message); }
@@ -2857,6 +2889,7 @@ function gdRows(r, f) {
     <td>${fetched}</td>
     <td class="lc">${gdLast(r.last)}</td>
     <td>${n ? `<button class="gd-wtb ${open ? '' : 'shut'}" data-wtx="${esc(r.id)}" title="${open ? 'Hide' : 'Show'} worktrees">${ic('down')}${n}${f.wtDirty ? ` · ${f.wtDirty} changed` : ''}</button>` : '<span class="f">—</span>'}</td>
+    <td class="rm"><button class="gd-rm" data-drop="${esc(r.id)}" title="Remove from the list">${ic('x')}</button></td>
   </tr>`;
   if (!open || !n) return head;
   return head + gkSortedWts(r.worktrees).map((w) => `<tr class="wt" data-open="${esc(r.id)}" data-wt="${esc(w.rel)}" title="${esc(w.rel)}">
@@ -2866,7 +2899,7 @@ function gdRows(r, f) {
     <td>${gdSync(w.status, r.remotes)}</td>
     <td class="f">${w.created ? 'created ' + since(w.created / 1000) : ''}</td>
     <td class="lc">${gdLast(w.last)}</td>
-    <td></td>
+    <td></td><td></td>
   </tr>`).join('');
 }
 
@@ -2908,7 +2941,7 @@ function gkRenderDash() {
         ${p.g ? `<button class="more" data-dact="more" data-key="${esc(p.key)}" title="More">${ic('more')}</button>` : ''}
       </div>
       ${rows.length ? `<div class="gd-scroll"><table class="gd-t">
-        <thead><tr><th>Repository</th><th>Branch</th><th>Changes</th><th>Remote</th><th>Last fetch</th><th>Last commit</th><th>Worktrees</th></tr></thead>
+        <thead><tr><th>Repository</th><th>Branch</th><th>Changes</th><th>Remote</th><th>Last fetch</th><th>Last commit</th><th>Worktrees</th><th></th></tr></thead>
         <tbody>${rows.map((x) => gdRows(x.r, x.f)).join('')}</tbody></table></div>`
         : '<div class="gd-empty">No repositories — rescan the folder or remove the project.</div>'}
     </section>`;
@@ -2937,6 +2970,10 @@ $('gkDash').addEventListener('click', (e) => {
     if (gitUi.dashF === 'wt') { gitUi.dashF = 'all'; gitSaveUi(); for (const r of gkDash.repos) if (r.worktrees.length) gkDashOpen.add(r.id); }
     if (gkDashOpen.has(id)) gkDashOpen.delete(id); else gkDashOpen.add(id);
     return gkRenderDash();
+  }
+  if (b?.dataset.drop) {
+    const r = gkDash.repos.find((x) => x.id === b.dataset.drop);
+    return r && gkRemoveRepo(r);
   }
   const a = b?.dataset.dact;
   if (a === 'add') return gkAddGroupDialog();
@@ -3102,14 +3139,16 @@ $('gkBar').addEventListener('click', (e) => {
     ...[['auto', 'System'], ['light', 'Light'], ['dark', 'Dark']].map(([m, label]) => ({ label, check: themeMode() === m, act: () => setTheme(m) }))]);
 });
 
+function gkSortMenu(b) {
+  const pick = (k) => () => { if (gitUi.wtSort === k) return; gitUi.wtSort = k; gitSaveUi(); gkRenderSide(); };
+  gitMenu(b, [{ hd: 'Sort worktrees' },
+    { label: 'Newest first', check: gitUi.wtSort !== 'az', act: pick('new') },
+    { label: 'Name (A–Z)', check: gitUi.wtSort === 'az', act: pick('az') }]);
+}
 $('gkFilter').addEventListener('input', () => (MN.tab === 'agents' ? gkRenderAgents() : gkRenderSide()));
 $('gkTree').addEventListener('click', (e) => {
   const so = e.target.closest('[data-wtsort]');
-  if (so) {
-    gitUi.wtSort = so.dataset.wtsort;
-    gitSaveUi();
-    return gkRenderSide();
-  }
+  if (so) return gkSortMenu(so);
   if (e.target.closest('[data-wtnew]')) return gkBranchDialog({ wtOnly: true });
   const h = e.target.closest('[data-sec]');
   if (h) {

@@ -1528,14 +1528,18 @@ function groupName(v, id) {
 }
 
 // Thêm (path + name), đổi tên (id + name), quét lại (id + rescan), gỡ khỏi danh sách (id +
-// remove — không xoá gì trên đĩa).
+// remove), gỡ một repo khỏi project (id + drop: thư mục repo; quét lại thì nó quay về).
+// Không xoá gì trên đĩa.
 async function gitGroupOp(body) {
   let g = null;
   if (body.id) {
     g = gitGroups.find((x) => x.id === body.id);
     if (!g) throw new Error('This project is no longer in the list — refresh the page.');
     if (body.remove) gitGroups = gitGroups.filter((x) => x !== g);
-    else if (body.rescan) {
+    else if (body.drop) {
+      if (!g.repos.includes(body.drop)) throw new Error('This repository is no longer in the project — refresh the page.');
+      g.repos = g.repos.filter((d) => d !== body.drop);
+    } else if (body.rescan) {
       if ((await kindOf(g.path)) !== 'dir') throw new Error(`Folder not found: ${g.path}`);
       g.repos = (await scanRepos(g.path)).repos;
     } else g.name = groupName(body.name, g.id);

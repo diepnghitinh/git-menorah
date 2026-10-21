@@ -30,6 +30,12 @@ Changes
   there are many).
 - Settings has tabs: Accounts and Terminal limits.
 
+Fixes
+- Worktrees heading in a narrow sidebar: the "Newest | A–Z" switch wrapped and
+  pushed the count out of view. It is now one sort icon next to +; a click
+  opens a menu with "Newest first" and "Name (A–Z)". Long section titles end
+  in "…" instead of crowding the buttons.
+
 
 1.0.4 (2026-10-21)
 ------------------

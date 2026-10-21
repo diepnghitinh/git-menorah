@@ -6,7 +6,7 @@ GitMenorah is a desktop app for developers who work with Claude Code and Codex e
 
 Start an agent, give it its own worktree, wire it to another agent's context, then review and merge the work from the same window.
 
-![Project · Git: branches, worktrees and commit graph](tools/git-desktop/imgs/sc-1.png)
+![Left: Project · Git with branches, worktrees and the commit graph. Right: the canvas with two Claude Code sessions wired together](tools/git-desktop/imgs/showcase.png)
 
 ---
 
@@ -26,8 +26,6 @@ Coding agents are fast. Juggling them is not. Five terminal tabs, three half-fin
 ---
 
 ## Agents
-
-![Canvas with two Claude Code sessions wired together](tools/git-desktop/imgs/sc-2.png)
 
 - **Claude Code, Codex and plain terminals** as first-class nodes. `⌘T` for Claude Code, `⇧⌘T` for Codex, `⌥⌘T` for a shell.
 - **Live status at a glance.** Each node shows whether the agent is running, waiting for input or done. The **Agents** view (`⌘3`) lists every session across your projects.
