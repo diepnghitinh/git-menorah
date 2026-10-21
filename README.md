@@ -1,10 +1,13 @@
 # GitMenorah
 
-**Run a team of coding agents side by side, each on its own branch, all on one canvas.**
+**A Git worktrees UI and a central control room for your coding agents.**
 
-GitMenorah is a desktop app for developers who work with Claude Code and Codex every day. It brings three things into one window: an infinite canvas of live agent terminals, a Git client built around worktrees, and a lightweight native process manager that keeps those agents in check.
+GitMenorah is a desktop app for developers who run Claude Code and Codex every day. It does two jobs in one window:
 
-Start an agent, give it its own worktree, wire it to another agent's context, then review and merge the work from the same window.
+1. **Git worktrees, made visual.** Create, inspect, merge and clean up worktrees from a UI instead of the command line, so every task gets its own branch and folder.
+2. **Every agent, managed in one place.** Each Claude Code, Codex or shell session is a live node on a canvas. See which agent is running, which is waiting for you and which is done, across all your projects.
+
+Put the two together: give each agent its own worktree, let agents share context, then review and merge their work from the same window.
 
 ![Left: Project · Git with branches, worktrees and the commit graph. Right: the canvas with two Claude Code sessions wired together](tools/git-desktop/imgs/showcase.png)
 
@@ -16,8 +19,8 @@ Coding agents are fast. Juggling them is not. Five terminal tabs, three half-fin
 
 | | |
 |---|---|
-| **See every agent at once** | Each Claude Code, Codex or shell session is a live node on a canvas. Pan, zoom and group them by task instead of hunting through tabs. |
-| **One task, one worktree** | Spin up a branch in its own `.worktrees/<name>` folder in two clicks. Agents never step on each other's files, and your main checkout stays where it is. |
+| **One task, one worktree** | Spin up a branch in its own `.worktrees/<name>` folder in two clicks. Agents never step on each other's files, and your main checkout stays put. |
+| **All agents, one view** | Claude Code, Codex and shells live side by side on a canvas and in a single Agents list, instead of being scattered across terminal tabs. |
 | **Know who needs you** | Running, waiting and finished states show on every node, in the Agents list and at the MacBook notch. A finished turn never sits unnoticed. |
 | **Agents that share context** | Draw a wire between two nodes and each agent can read the other's notes, transcript or terminal with one command. |
 | **Git you can trust** | Every Git action shows the exact commands before it runs. Nothing happens behind your back. |
@@ -25,10 +28,33 @@ Coding agents are fast. Juggling them is not. Five terminal tabs, three half-fin
 
 ---
 
-## Agents
+## Git worktrees UI
+
+GitMenorah treats worktrees as the default way to work, not an advanced trick.
+
+- **New worktree in two clicks.** Press **+** next to *Worktrees* in the sidebar, or right-click any worktree and choose **New worktree from …**. The branch defaults to whatever the main worktree is on.
+- **Consistent names.** Branches follow `feat/<yyyy-mm-dd-hh-mm>_<name>` or `hotfix/…`. Worktrees live in `.worktrees/<name>`, and that folder is kept out of Git automatically.
+- **Every worktree at a glance.** The sidebar lists all worktrees with their branch and pending changes, sorted by newest or A–Z.
+- **A terminal in any worktree.** Open a shell in any worktree or folder from the bottom tray, or drop a terminal or agent node on the canvas.
+- **Commit & merge into develop.** Ship a feature branch from its worktree to `develop` in one reviewed step.
+- **Clean up safely.** Removing a worktree is refused while it has uncommitted files or processes still running inside it, and you see which ignored files (`.env.local`, `dist/` …) would go with it. Shared branches such as `develop` and `main` are never deleted.
+
+### The rest of the Git client
+
+- **Commit graph** with branch and tag lanes, commit details and changed files as a path list or tree.
+- **Files view** with a file tree, per-file history and a built-in terminal.
+- **Branches, remotes and stashes** in one sidebar, with fetch, pull, push, stash and pop.
+- **Review before run.** Every action opens a dialog with the exact `git` commands and any warnings. **Command history** in the bottom tray records what ran and what it printed.
+- **Project groups.** Add every repository of a multi-repo product once, then fetch all of them in one click.
+- **Clone from URL.** Paste an HTTPS or SSH URL, or pick from the repositories of a signed-in account (`⇧⌘C`).
+- **Gitflow guard.** In repositories that have a `develop` branch, `main`, `master`, `staging` and `prod` only take changes through pull requests, and merging `develop` into them is refused. Repositories without `develop` are left alone.
+
+---
+
+## Central agent management
 
 - **Claude Code, Codex and plain terminals** as first-class nodes. `⌘T` for Claude Code, `⇧⌘T` for Codex, `⌥⌘T` for a shell.
-- **Live status at a glance.** Each node shows whether the agent is running, waiting for input or done. The **Agents** view (`⌘3`) lists every session across your projects.
+- **Agents view** (`⌘3`) lists every session across all your projects with its live status: running, waiting for input or done.
 - **Notch indicator (macOS).** Running and waiting agents appear around the MacBook notch. Click one to jump straight to it.
 - **Chat panel.** Read an agent's conversation as clean messages, including tool calls such as `Bash · npm test`, and reply from a normal text box.
 - **Sub-agent strip.** Follow the sub-agents a session spawns, with their steps and when they finish.
@@ -48,18 +74,14 @@ menorah-context terminal --node "Build"    # what a linked terminal printed
 
 GitMenorah also installs a matching skill, so agents learn to use the command on their own. The command only listens on `127.0.0.1` and requires a per-session token.
 
----
+### Resource limits
 
-## Worktrees
+Open **GitMenorah → Settings… → Terminal limits** (`⌘,`) and set:
 
-GitMenorah treats worktrees as the default way to work, not an advanced trick.
+- **Max CPU (cores):** processes started from your terminals are throttled once they exceed the limit.
+- **Max RAM (GB):** when the limit is hit, the process using the most memory is stopped and you get a notification.
 
-- **New worktree from the main worktree.** Press **+** next to *Worktrees* in the sidebar, or right-click any worktree and choose **New worktree from …**. The branch defaults to whatever the main worktree is on.
-- **Consistent names.** Branches follow `feat/<yyyy-mm-dd-hh-mm>_<name>` or `hotfix/…`. Worktrees live in `.worktrees/<name>`, and that folder is kept out of Git automatically.
-- **Every worktree at a glance.** The sidebar lists all worktrees with their branch and pending changes, sorted by newest or A–Z.
-- **Open a terminal anywhere.** Open a shell in any worktree or folder from the bottom tray, or drop a terminal node on the canvas.
-- **Commit & merge into develop.** Ship a feature branch from its worktree to `develop` in one reviewed step.
-- **Clean up safely.** Removing a worktree is refused while it has uncommitted files or processes still running inside it, and you see which ignored files (`.env.local`, `dist/` …) would go with it. Shared branches such as `develop` and `main` are never deleted.
+Your shell and the agent itself are never throttled or killed, only the processes they spawn. On Windows, usage is measured but not enforced yet.
 
 ---
 
@@ -73,18 +95,6 @@ GitMenorah treats worktrees as the default way to work, not an advanced trick.
 
 ---
 
-## Git
-
-- **Commit graph** with branch and tag lanes, commit details and changed files as a path list or tree.
-- **Files view** with a file tree, per-file history and a built-in terminal.
-- **Branches, remotes and stashes** in one sidebar, with fetch, pull, push, stash and pop.
-- **Review before run.** Every action opens a dialog with the exact `git` commands and any warnings. **Command history** in the bottom tray keeps a record of what ran and what it printed.
-- **Project groups.** Add every repository of a multi-repo product once, then fetch all of them in one click.
-- **Clone from URL.** Paste an HTTPS or SSH URL, or pick from the repositories of a signed-in account (`⇧⌘C`).
-- **Gitflow guard.** In repositories that have a `develop` branch, `main`, `master`, `staging` and `prod` only take changes through pull requests, and merging `develop` into them is refused. Repositories without `develop` are left alone.
-
----
-
 ## Accounts
 
 Open **GitMenorah → Accounts…** (or **Settings… → Accounts**) to sign in to GitHub, GitHub Enterprise, GitLab, Bitbucket Cloud or any other git host with a personal access token, as in Sourcetree. GitMenorah checks the token with the provider, then hands it to git's credential helper (macOS Keychain or Git Credential Manager). Fetch, pull, push and clone then work without password prompts, in the app and in your own terminals. GitMenorah stores no copy of the token.
@@ -95,22 +105,11 @@ Open **GitMenorah → Accounts…** (or **Settings… → Accounts**) to sign in
 
 ---
 
-## Resource limits
-
-Open **GitMenorah → Settings… → Terminal limits** (`⌘,`) and set:
-
-- **Max CPU (cores):** processes started from your terminals are throttled once they exceed the limit.
-- **Max RAM (GB):** when the limit is hit, the process using the most memory is stopped and you get a notification.
-
-Your shell and the agent itself are never throttled or killed, only the processes they spawn. On Windows, usage is measured but not enforced yet.
-
----
-
 ## Under the hood
 
 - **Electron** shell for the window, canvas and Git UI.
 - **menorah-agentd**, a small Go sidecar that runs every terminal (PTY on macOS, ConPTY on Windows), reads agent transcripts, enforces resource limits and serves `menorah-context`. It idles at about 6 MB of RAM. If it crashes, it restarts within a second and restores your limits and wiring.
-- **No cloud, no account.** Everything runs locally against your own repositories and your own Claude Code / Codex installs.
+- **Local first.** No GitMenorah cloud and no GitMenorah account. Everything runs on your machine against your own repositories and your own Claude Code / Codex installs.
 
 ---
 
