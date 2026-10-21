@@ -1,0 +1,78 @@
+/* Bảng agent ở tai thỏ. Nền đen tuyền để liền với tai thỏ; màu trạng thái trùng app.css
+   (chế độ tối): chạy = --ok, chờ lệnh = --accent, dừng = --faint. */
+:root {
+  --text:#f2f4f7; --muted:#a3acb9; --faint:#6f7a89; --line:#1d2228; --hover:#15191e;
+  --ok:#4cc38a; --accent:#4c8dff; --warn:#e0a83a;
+  --claude:#d97757; --codex:#e3e8ef;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --bar-h:38px; --notch-w:200px; --open-w:580px;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; font: 12.5px/1.4 var(--sans); color: var(--text);
+  -webkit-user-select: none; user-select: none; cursor: default; }
+
+/* --z = 1/zoom của trang: tai thỏ giữ cỡ thật khi app zoom, px trong #island = px màn hình. */
+#island { position: fixed; inset: 0; zoom: var(--z, 1); background: #000; border-radius: 0 0 14px 14px; overflow: hidden; display: flex; flex-direction: column; }
+#island.open { border-radius: 0 0 22px 22px; }
+#island.peek { border-radius: 0 0 18px 18px; }
+
+#bar { height: var(--bar-h); flex: none; display: grid; grid-template-columns: 1fr var(--notch-w) 1fr; align-items: center; }
+body.no-notch #bar { grid-template-columns: 1fr 0 1fr; }
+.wing { display: flex; align-items: center; gap: 7px; min-width: 0; padding: 0 12px; }
+.wing.left { justify-content: flex-start; }
+.wing.right { justify-content: flex-end; }
+.bar-title { font-weight: 600; color: var(--muted); font-size: 12px; }
+.count { font-weight: 700; font-variant-numeric: tabular-nums; font-size: 13px; }
+.count.run { color: var(--ok); }
+.count.idle { color: var(--accent); }
+.summary { color: var(--muted); font-size: 12px; white-space: nowrap; }
+
+.mark { width: 18px; height: 18px; border-radius: 5px; display: inline-grid; place-items: center; font: 700 10.5px/1 var(--sans); color: #fff; flex: none; }
+.mark.claude { background: var(--claude); }
+.mark.codex { background: var(--codex); color: #000; }
+.mark.lg { width: 26px; height: 26px; border-radius: 7px; font-size: 13px; }
+
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); flex: none; }
+.dot.running { background: var(--ok); animation: pulse 1.4s ease-in-out infinite; }
+.dot.idle { background: var(--accent); }
+@keyframes pulse { 50% { opacity: .35; } }
+
+/* Ba vạch nhảy: có agent đang làm. */
+.bars { display: inline-flex; gap: 2px; align-items: flex-end; height: 12px; }
+.bars i { width: 3px; border-radius: 1px; background: var(--ok); animation: bar 0.9s ease-in-out infinite; }
+.bars i:nth-child(2) { animation-delay: .15s; } .bars i:nth-child(3) { animation-delay: .3s; }
+@keyframes bar { 0%, 100% { height: 4px; } 50% { height: 12px; } }
+
+#peek, #list { display: none; }
+#island.peek #peek { display: flex; }
+#island.open #list { display: block; }
+
+#peek { align-items: center; gap: 10px; padding: 6px 14px 12px; min-width: 0; }
+.peek-text { flex: 1; min-width: 0; }
+.peek-text b { font-weight: 600; }
+.peek-sub { color: var(--muted); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Bề rộng cố định bằng lúc mở: chiều cao được đo khi cửa sổ còn là viên hẹp. Không giãn theo
+   cửa sổ (flex 0 1 auto): chiều cao cửa sổ lấy từ scrollHeight của #list, giãn theo cửa sổ thì
+   số đo kéo cửa sổ cao thêm mãi. Co được khi chạm trần 70% màn hình, phần dư thì cuộn. */
+#list { padding: 2px 8px 10px; overflow-y: auto; flex: 0 1 auto; min-height: 0; width: var(--open-w); }
+#list::-webkit-scrollbar { width: 6px; } #list::-webkit-scrollbar-thumb { background: #2a3038; border-radius: 3px; }
+.row { display: grid; grid-template-columns: 26px 1fr auto; gap: 10px; align-items: start; padding: 9px 8px; border-radius: 12px; }
+.row + .row { border-top: 1px solid var(--line); border-radius: 0; }
+.row:hover { background: var(--hover); border-radius: 12px; }
+.row:hover + .row { border-top-color: transparent; }
+.r-main { min-width: 0; }
+.r-head { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.r-title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.r-where { color: var(--faint); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
+.r-you { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+.r-you b { color: var(--text); font-weight: 500; }
+.r-meta { color: var(--faint); font-size: 11.5px; margin-top: 3px; display: flex; gap: 6px; flex-wrap: wrap; font-variant-numeric: tabular-nums; }
+.r-meta .run { color: var(--ok); }
+.r-meta .warn { color: var(--warn); }
+.r-side { display: flex; align-items: center; gap: 10px; align-self: center; }
+
+button.go { font: 600 12px/1 var(--sans); color: #fff; background: #23292f; border: 0; border-radius: 999px; padding: 7px 13px; cursor: pointer; }
+button.go:hover { background: var(--accent); }
+.empty { color: var(--faint); text-align: center; padding: 14px 0 6px; }

@@ -1,0 +1,375 @@
+/* GitMenorah — trang app (menu cấp 1: Project · Canvas). Token màu trùng tools/git.html để tab Git
+   và phần còn lại cùng một hệ. Trạng thái dùng chung một bộ màu ở mọi chỗ:
+   chạy = --ok, chờ lệnh = --accent, dừng = --faint, lỗi = --danger. */
+
+:root {
+  --bg:#f6f7f9; --panel:#fff; --border:#e3e6eb; --border-strong:#cfd4dc;
+  --text:#1b2330; --muted:#5d6878; --faint:#8a94a3;
+  --accent:#1f6feb; --accent-soft:#e8f0fe; --accent-hover:#185ccc;
+  --ok:#1a7f4b; --ok-soft:#e6f4ec; --warn:#a66a00; --warn-soft:#fdf3e1;
+  --danger:#c62f3a; --danger-soft:#fdecee;
+  --term:#11151c; --term-text:#d7dde6; --term-faint:#6b7585;
+  --hover:#f4f6f9; --sunken:#f3f5f8; --chip:#eef0f3; --line:#eef0f3;
+  --grid:#d9dde3; --canvas:#eef0f3;
+  --shadow-c:16,24,40;
+  --claude:#d97757; --codex:#1b2330;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --radius:10px;
+  --rail-bg:#1f2329; --rail-fg:#8b929c; --rail-fg-on:#fff;
+  /* Rail đủ rộng cho ba nút đèn macOS (~56px) với lề 14px hai bên; đổi thì sửa luôn trafficLightPosition ở main.cjs */
+  --rail-w:84px;
+  /* = 1 / mức zoom trang, app.js đặt; rail giữ cỡ thật khi ⌘+ / ⌘− */
+  --rail-z:1;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg:#0f1318; --panel:#161b22; --border:#2a313b; --border-strong:#3a424e;
+    --text:#e3e8ef; --muted:#9aa5b4; --faint:#6f7a89;
+    --accent:#4c8dff; --accent-soft:#1a2a45; --accent-hover:#6aa1ff;
+    --ok:#4cc38a; --ok-soft:#14301f; --warn:#e0a83a; --warn-soft:#33270f;
+    --danger:#f2707a; --danger-soft:#3a1a1e;
+    --hover:#1f2630; --sunken:#1c222a; --chip:#222932; --line:#222932;
+    --grid:#262d37; --canvas:#0c1014;
+    --shadow-c:0,0,0;
+    --codex:#e3e8ef;
+    --rail-bg:#0b0e12;
+    color-scheme: dark;
+  }
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; }
+body { background: var(--bg); color: var(--text); font: 14px/1.5 var(--sans); -webkit-font-smoothing: antialiased; }
+button { font: inherit; font-size: 13px; color: var(--text); background: var(--panel); border: 1px solid var(--border-strong);
+  border-radius: 8px; height: 30px; padding: 0 10px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; white-space: nowrap; }
+button:hover { background: var(--hover); }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.primary:hover { background: var(--accent-hover); }
+button.ghost { background: transparent; border-color: transparent; }
+button.ghost:hover { background: var(--hover); }
+button:disabled { opacity: .5; cursor: default; }
+input[type=text], textarea, select { font: inherit; font-size: 13px; color: var(--text); background: var(--panel);
+  border: 1px solid var(--border-strong); border-radius: 8px; padding: 6px 10px; outline: none; }
+input[type=text]:focus, textarea:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.i { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+.muted { color: var(--muted); }
+.mono { font-family: var(--mono); font-size: 12.5px; }
+[hidden] { display: none !important; }
+
+/* ─── Thanh canvas nổi (góc trên trái whiteboard) ───────────────────────── */
+.canvas-bar { top: 10px; left: 12px; bottom: auto; transform: none; max-width: calc(100% - 24px); padding: 3px 4px 3px 12px; gap: 4px; }
+/* Dải trên cùng của canvas là header trong suốt: kéo ở đó dời cửa sổ, không pan canvas. Vùng kéo nuốt
+   mọi chuột, nên phần node trôi lên dải này bị che, không bấm được — như thanh tiêu đề (PO chốt 21/10).
+   Nằm trên #world (z-index node gói trong #world), dưới các thanh nổi (10). Cao = thanh nổi (10 + 36) + 10. */
+#canvas-head { position: absolute; top: 0; left: 0; right: 0; height: 56px; z-index: 1; -webkit-app-region: drag; }
+/* Vùng kéo thắng cả phần tử đè lên nó: menu chuột phải hay hộp thoại mở vào dải này thì header thôi kéo. */
+body:has(.menu:not([hidden]), #modal:not([hidden])) #canvas-head { -webkit-app-region: no-drag; }
+.canvas-bar { -webkit-app-region: drag; user-select: none; }
+.canvas-bar button, .canvas-bar input, .canvas-bar .ctab { -webkit-app-region: no-drag; }
+.cb-project { font-weight: 600; white-space: nowrap; max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
+.cb-sep { color: var(--faint); margin: 0 2px; }
+.chev { width: 14px; height: 14px; color: var(--faint); }
+/* Tab canvas trong thanh nổi */
+.canvas-tabs { display: flex; align-items: center; gap: 2px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.canvas-tabs::-webkit-scrollbar { display: none; }
+.ctab { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 6px 0 12px; border: 1px solid transparent; border-radius: 7px;
+  background: transparent; color: var(--muted); font-weight: 500; white-space: nowrap; flex: none; cursor: pointer; user-select: none; }
+.ctab:hover { color: var(--text); background: var(--hover); }
+.ctab.on { color: var(--text); background: var(--sunken); border-color: var(--border); }
+.ctab input { width: 120px; height: 22px; padding: 0 6px; font-weight: 500; }
+.ctab .ctab-n { font-size: 11px; color: var(--faint); font-family: var(--mono); }
+.ctab .ctab-n.run { color: var(--ok); }
+.ctab .ctab-x { width: 18px; height: 18px; display: grid; place-items: center; border-radius: 4px; color: var(--faint); visibility: hidden; }
+.ctab:hover .ctab-x, .ctab.on .ctab-x { visibility: visible; }
+.ctab .ctab-x:hover { background: var(--danger-soft); color: var(--danger); }
+.ctab .ctab-x .i { width: 12px; height: 12px; }
+.ctab-add { width: 28px; height: 28px; padding: 0; border: 0; background: transparent; color: var(--muted); border-radius: 7px; flex: none; display: grid; place-items: center; }
+.ctab-add:hover { background: var(--hover); color: var(--text); }
+.ctab-add .i { width: 15px; height: 15px; }
+
+/* Menu cấp 1 dọc bên trái, kiểu activity bar */
+#rail { position: absolute; top: 0; bottom: 0; left: 0; width: var(--rail-w); background: var(--rail-bg); display: flex; flex-direction: column;
+  align-items: center; gap: 6px; z-index: 15; -webkit-app-region: drag; user-select: none; }
+#rail button { -webkit-app-region: no-drag; }
+#rail { zoom: var(--rail-z); }
+.rail-top { height: 44px; flex: none; }
+body.win .rail-top { height: 6px; }
+.rail-project { width: 40px; height: 40px; padding: 0; border: 0; border-radius: 10px; background: #3b4250; color: #fff; font-weight: 700; font-size: 14px;
+  letter-spacing: .02em; display: grid; place-items: center; }
+.rail-project:hover { background: #4a5263; }
+.rail-sep { width: 28px; height: 1px; background: rgba(255,255,255,.12); margin: 6px 0 2px; }
+.rail-btn { position: relative; width: var(--rail-w); height: 52px; border: 0; border-radius: 0; background: transparent; color: var(--rail-fg);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 0; }
+.rail-lb { font-size: 10.5px; font-weight: 600; line-height: 1; }
+.rail-btn:hover { background: transparent; color: var(--rail-fg-on); }
+.rail-btn.on { color: var(--rail-fg-on); }
+.rail-btn.on::before { content: ''; position: absolute; left: 0; top: 10px; bottom: 10px; width: 3px; border-radius: 0 3px 3px 0; background: var(--rail-fg-on); }
+.rail-btn .i { width: 22px; height: 22px; stroke-width: 1.6; }
+.rail-badge { position: absolute; right: 16px; top: 4px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--ok);
+  color: #fff; font-size: 10px; font-weight: 700; line-height: 16px; text-align: center; }
+.count { font-size: 11px; background: var(--ok-soft); color: var(--ok); border-radius: 10px; padding: 0 6px; margin-left: 2px; font-weight: 600; }
+
+.menu { position: absolute; top: 38px; left: 0; min-width: 280px; max-width: 420px; background: var(--panel); border: 1px solid var(--border);
+  border-radius: 10px; box-shadow: 0 12px 32px rgba(var(--shadow-c), .18); padding: 6px; z-index: 50; }
+.menu-item { display: flex; align-items: center; gap: 10px; width: 100%; height: auto; min-height: 34px; padding: 6px 10px; border: 0;
+  background: transparent; border-radius: 7px; text-align: left; }
+.menu-item:hover { background: var(--hover); }
+.menu-item .grow { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.menu-item .sub { font-size: 11.5px; color: var(--faint); font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; }
+.menu-item.on { background: var(--accent-soft); }
+.menu-sep { height: 1px; background: var(--line); margin: 6px 4px; }
+.menu-item .x { opacity: 0; color: var(--faint); padding: 2px; border-radius: 5px; }
+.menu-item:hover .x { opacity: 1; }
+.menu-item .x:hover { color: var(--danger); background: var(--danger-soft); }
+
+main { position: absolute; inset: 0 0 0 calc(var(--rail-w) * var(--rail-z)); }
+#project-menu { position: fixed; top: calc(52px * var(--rail-z)); left: calc(var(--rail-w) * var(--rail-z) + 8px); }
+/* Menu + ở dải tab canvas: toạ độ đặt bằng JS theo nút. Danh sách repo dài thì cuộn trong khung. */
+#canvas-menu { position: fixed; min-width: 300px; }
+.menu-hd { padding: 8px 10px 4px; font-size: 10.5px; font-weight: 700; color: var(--faint); text-transform: uppercase; letter-spacing: .05em; }
+.menu-list { max-height: min(360px, 50vh); overflow-y: auto; }
+.menu-item > .i { width: 15px; height: 15px; flex: none; color: var(--muted); }
+/* Menu chuột phải trên canvas: toạ độ đặt bằng JS theo điểm bấm. */
+#node-menu { position: fixed; min-width: 220px; }
+#node-menu .menu-item > .i { width: 18px; }
+.menu-kbd { font-size: 11.5px; color: var(--faint); font-family: var(--mono); flex: none; }
+.menu-item:focus-visible { background: var(--hover); outline: none; }
+.view { position: absolute; inset: 0; }
+#git-frame { width: 100%; height: 100%; border: 0; display: block; background: var(--bg); }
+
+/* ─── Canvas ─────────────────────────────────────────────────────────────── */
+#stage { position: absolute; inset: 0; overflow: hidden; background-color: var(--canvas); outline: none;
+  background-image: radial-gradient(var(--grid) 1px, transparent 1px); cursor: default; }
+#stage.panning { cursor: grabbing; }
+#world { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
+#links { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
+#links path.rope { fill: none; stroke: var(--accent); stroke-width: 2; opacity: .65; }
+#links path.hit { fill: none; stroke: transparent; stroke-width: 14; pointer-events: stroke; cursor: pointer; }
+#links g:hover path.rope, #links g.sel path.rope { opacity: 1; stroke-width: 3; }
+#links g.sel path.rope { stroke: var(--danger); }
+#links path.temp { fill: none; stroke: var(--accent); stroke-width: 2; stroke-dasharray: 6 5; }
+#links .rope-x { pointer-events: all; cursor: pointer; }
+#links .rope-x circle { fill: var(--panel); stroke: var(--danger); stroke-width: 1.5; }
+#links .rope-x path { stroke: var(--danger); stroke-width: 1.8; stroke-linecap: round; }
+
+.node { position: absolute; display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--border-strong);
+  border-radius: var(--radius); box-shadow: 0 2px 6px rgba(var(--shadow-c), .08), 0 10px 30px rgba(var(--shadow-c), .08); }
+.node.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), 0 14px 40px rgba(var(--shadow-c), .2); }
+.node.link-target { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.node.drop { border-color: var(--ok); box-shadow: 0 0 0 3px var(--ok-soft); }
+.node-head { height: 34px; flex: none; display: flex; align-items: center; gap: 6px; padding: 0 6px 0 10px; border-bottom: 1px solid var(--border);
+  cursor: grab; user-select: none; border-radius: var(--radius) var(--radius) 0 0; }
+.node-head:active { cursor: grabbing; }
+.node-title { flex: 1; min-width: 0; font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.node-title input { width: 100%; height: 24px; padding: 0 6px; font-weight: 600; }
+.node-cwd { font-family: var(--mono); font-size: 11px; color: var(--faint); max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; }
+.node-btn { height: 24px; min-width: 24px; padding: 0 6px; border: 0; background: transparent; color: var(--muted); border-radius: 6px; }
+.node-btn:hover { background: var(--hover); color: var(--text); }
+.node-btn.close:hover { background: var(--danger-soft); color: var(--danger); }
+.node-btn .i { width: 15px; height: 15px; }
+.mode { display: flex; background: var(--sunken); border: 1px solid var(--border); border-radius: 7px; padding: 1px; }
+.mode button { height: 20px; padding: 0 8px; border: 0; border-radius: 5px; font-size: 11.5px; background: transparent; color: var(--muted); font-weight: 600; }
+.mode button.on { background: var(--panel); color: var(--text); box-shadow: 0 1px 2px rgba(var(--shadow-c), .15); }
+.port { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--accent); background: var(--panel); flex: none; cursor: crosshair; }
+.port:hover, .port.has { background: var(--accent); }
+.status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); flex: none; }
+.status-dot.running { background: var(--ok); box-shadow: 0 0 0 3px var(--ok-soft); animation: pulse 1.4s ease-in-out infinite; }
+.status-dot.idle { background: var(--accent); }
+.status-dot.exited { background: var(--danger); }
+@keyframes pulse { 50% { box-shadow: 0 0 0 5px transparent; } }
+.agent-mark { width: 18px; height: 18px; border-radius: 5px; display: inline-grid; place-items: center; font: 700 10.5px/1 var(--sans); color: #fff; flex: none; }
+.agent-mark.claude { background: var(--claude); }
+.agent-mark.codex { background: var(--codex); color: var(--panel); }
+.agent-mark.shell { background: var(--chip); color: var(--muted); }
+
+.node-body { flex: 1; min-height: 0; position: relative; border-radius: 0 0 var(--radius) var(--radius); overflow: hidden; }
+.node.terminal .node-body { background: var(--term); }
+.term-host { position: absolute; inset: 6px 4px 4px 10px; }
+.term-host .xterm { height: 100%; }
+.term-host .xterm-viewport { background: transparent !important; }
+.term-host .xterm-viewport::-webkit-scrollbar { width: 8px; }
+.term-host .xterm-viewport::-webkit-scrollbar-thumb { background: #2f3744; border-radius: 4px; }
+.overlay { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(17,21,28,.82); color: var(--term-text); z-index: 3; text-align: center; padding: 16px; }
+.overlay p { margin: 0 0 12px; color: #aab4c2; font-size: 13px; }
+.overlay button { background: #1f2630; color: #e3e8ef; border-color: #3a424e; }
+.overlay button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.drop-hint { position: absolute; inset: 8px; border: 2px dashed var(--ok); border-radius: 8px; display: grid; place-items: center; color: var(--ok);
+  background: rgba(26,127,75,.12); font-weight: 600; z-index: 4; pointer-events: none; }
+
+.resize { position: absolute; z-index: 5; }
+.resize.e { right: -4px; top: 8px; bottom: 8px; width: 8px; cursor: ew-resize; }
+.resize.w { left: -4px; top: 8px; bottom: 8px; width: 8px; cursor: ew-resize; }
+.resize.s { bottom: -4px; left: 8px; right: 8px; height: 8px; cursor: ns-resize; }
+.resize.n { top: -4px; left: 8px; right: 8px; height: 8px; cursor: ns-resize; }
+.resize.se { right: -5px; bottom: -5px; width: 14px; height: 14px; cursor: nwse-resize; }
+.resize.sw { left: -5px; bottom: -5px; width: 14px; height: 14px; cursor: nesw-resize; }
+.resize.ne { right: -5px; top: -5px; width: 14px; height: 14px; cursor: nesw-resize; }
+.resize.nw { left: -5px; top: -5px; width: 14px; height: 14px; cursor: nwse-resize; }
+.node.active .resize.se::after { content: ''; position: absolute; right: 6px; bottom: 6px; width: 8px; height: 8px;
+  border-right: 2px solid var(--faint); border-bottom: 2px solid var(--faint); border-radius: 0 0 3px 0; }
+
+.node.note { background: #fff8d6; border-color: #ecd98a; }
+.node.note .node-head { border-bottom-color: #ecd98a; }
+.node.note textarea { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; border-radius: 0 0 var(--radius) var(--radius);
+  background: transparent; resize: none; padding: 10px 12px; font-size: 13.5px; line-height: 1.55; color: #3d3410; box-shadow: none; }
+@media (prefers-color-scheme: dark) {
+  .node.note { background: #2b2714; border-color: #4d4422; }
+  .node.note .node-head { border-bottom-color: #4d4422; }
+  .node.note textarea { color: #efe3b0; }
+}
+.node.image .node-body { background: var(--sunken); display: grid; place-items: center; }
+.node.image img { max-width: 100%; max-height: 100%; object-fit: contain; display: block; }
+
+.toolbar { position: absolute; display: flex; align-items: center; gap: 4px; padding: 4px; background: var(--panel); border: 1px solid var(--border);
+  border-radius: 12px; box-shadow: 0 6px 24px rgba(var(--shadow-c), .12); z-index: 10; }
+.toolbar button { border-color: transparent; background: transparent; height: 32px; }
+.toolbar button:hover { background: var(--hover); }
+.toolbar .sep { width: 1px; height: 20px; background: var(--border); margin: 0 4px; }
+#toolbar { left: 50%; bottom: 16px; transform: translateX(-50%); }
+/* Thanh giữa (628px đủ chữ, 281px chỉ icon) không được đè thanh zoom (245px, cách phải 16px):
+   canvas < 1180px thì bỏ chữ, nút vẫn có title; < 840px thì dạt sang trái. Đổi nút thì đo lại. */
+#view-canvas { container: canvas / inline-size; }
+@container canvas (max-width: 1180px) { #toolbar .lbl { display: none; } #toolbar button { padding-inline: 9px; } }
+@container canvas (max-width: 840px) { #toolbar, .shots { left: 16px; transform: none; } }
+.zoombar { right: 16px; bottom: 16px; }
+.zoom-val { min-width: 54px; justify-content: center; font-variant-numeric: tabular-nums; color: var(--muted); }
+#minimap-toggle.on { color: var(--accent); }
+
+/* Bản đồ nhỏ: nằm ngay trên thanh zoom, cùng bề rộng. Node tô theo trạng thái như chấm ở tiêu đề node. */
+.minimap { right: 16px; bottom: 66px; width: 240px; height: 150px; padding: 0; overflow: hidden; cursor: pointer; touch-action: none; }
+.minimap svg { display: block; width: 100%; height: 100%; }
+.mm-n { fill: var(--chip); stroke: var(--border-strong); stroke-width: 1; }
+.mm-n.running { fill: var(--ok-soft); stroke: var(--ok); }
+.mm-n.idle { fill: var(--accent-soft); stroke: var(--accent); }
+.mm-n.exited { stroke: var(--danger); }
+.mm-n.note { fill: var(--warn-soft); stroke: var(--warn); }
+.mm-n.on { stroke: var(--text); stroke-width: 1.5; }
+.mm-view { fill: var(--accent); fill-opacity: .07; stroke: var(--accent); stroke-width: 1.5; }
+
+.popover { position: absolute; background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+  box-shadow: 0 16px 40px rgba(var(--shadow-c), .2); z-index: 15; }
+.popover-head { display: flex; align-items: baseline; gap: 10px; padding: 12px 14px 8px; }
+.popover-head .muted { font-size: 12px; }
+.shots { left: 50%; bottom: 64px; transform: translateX(-50%); width: 560px; }
+.shots-list { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; padding: 6px 14px 14px; max-height: 300px; overflow: auto; }
+.shot { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; cursor: grab; background: var(--sunken); }
+.shot img { width: 100%; height: 84px; object-fit: cover; display: block; pointer-events: none; }
+.shot span { display: block; font-size: 11px; color: var(--muted); padding: 3px 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.shot:hover { border-color: var(--accent); }
+
+.empty { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; z-index: 5; }
+.empty-card { pointer-events: auto; max-width: 520px; background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+  padding: 28px 32px; box-shadow: 0 16px 48px rgba(var(--shadow-c), .1); }
+.empty-card h2 { margin: 0 0 6px; font-size: 18px; }
+.empty-card p { margin: 0 0 18px; color: var(--muted); }
+.empty-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.empty-actions button { height: 34px; }
+.hints { margin: 20px 0 0; padding: 16px 0 0; border-top: 1px solid var(--line); list-style: none; color: var(--muted); font-size: 13px; display: grid; gap: 6px; }
+.hints b { color: var(--text); font-weight: 600; }
+
+/* ─── Chat ───────────────────────────────────────────────────────────────── */
+.chat { position: absolute; inset: 0; display: flex; flex-direction: column; background: var(--panel); z-index: 2; }
+.chat-log { flex: 1; min-height: 0; overflow-y: auto; padding: 14px 16px 6px; display: flex; flex-direction: column; gap: 10px; user-select: text; }
+.chat-empty { margin: auto; color: var(--faint); text-align: center; font-size: 13px; max-width: 320px; }
+.msg { max-width: 100%; font-size: 13.5px; line-height: 1.55; word-wrap: break-word; }
+.msg.user { align-self: flex-end; max-width: 82%; background: var(--accent-soft); border-radius: 12px 12px 4px 12px; padding: 8px 12px; white-space: pre-wrap; }
+.msg.assistant { align-self: flex-start; }
+.msg.assistant p { margin: 0 0 8px; }
+.msg.assistant p:last-child { margin-bottom: 0; }
+.msg.assistant ul, .msg.assistant ol { margin: 4px 0 8px; padding-left: 20px; }
+.msg.assistant h1, .msg.assistant h2, .msg.assistant h3, .msg.assistant h4 { font-size: 14px; margin: 10px 0 4px; }
+.msg code { font-family: var(--mono); font-size: 12px; background: var(--chip); padding: 1px 5px; border-radius: 4px; }
+.msg pre { background: var(--sunken); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; overflow-x: auto; margin: 6px 0; }
+.msg pre code { background: none; padding: 0; white-space: pre; }
+.msg table { border-collapse: collapse; font-size: 12.5px; margin: 6px 0; }
+.msg td, .msg th { border: 1px solid var(--border); padding: 3px 8px; text-align: left; }
+.msg .img-tag { font-size: 11.5px; color: var(--muted); margin-left: 6px; }
+.tools { align-self: flex-start; display: flex; flex-wrap: wrap; gap: 4px; max-width: 100%; }
+.tool { display: inline-flex; gap: 6px; align-items: baseline; max-width: 100%; font-size: 11.5px; color: var(--muted); background: var(--sunken);
+  border: 1px solid var(--line); border-radius: 6px; padding: 1px 7px; }
+.tool b { color: var(--text); font-weight: 600; flex: none; }
+.tool span { font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tool.error { color: var(--danger); background: var(--danger-soft); border-color: transparent; }
+.tools-more { font-size: 11.5px; color: var(--accent); background: none; border: 0; height: auto; padding: 1px 4px; }
+.note-line { align-self: center; font-size: 11.5px; color: var(--faint); }
+.chat-foot { flex: none; border-top: 1px solid var(--border); padding: 8px 10px 10px; background: var(--panel); }
+.chat-keys { display: flex; gap: 4px; align-items: center; margin-bottom: 6px; font-size: 11.5px; color: var(--faint); }
+.chat-keys button { height: 22px; padding: 0 8px; font-size: 11.5px; font-family: var(--mono); border-radius: 6px; }
+.chat-keys .state { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; }
+.composer { display: flex; gap: 8px; align-items: flex-end; border: 1px solid var(--border-strong); border-radius: 10px; padding: 6px 6px 6px 10px; background: var(--panel); }
+.composer:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.composer textarea { flex: 1; border: 0; box-shadow: none !important; padding: 4px 0; resize: none; max-height: 160px; min-height: 22px; line-height: 1.45; background: transparent; }
+.composer button { height: 30px; }
+.attachments { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
+.attachments:empty { display: none; }
+.att { display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; background: var(--chip); border-radius: 6px; padding: 2px 4px 2px 8px; max-width: 240px; }
+.att span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); }
+.att button { height: 18px; min-width: 18px; padding: 0; border: 0; background: transparent; color: var(--faint); }
+
+/* ─── Agents ─────────────────────────────────────────────────────────────── */
+#view-agents { overflow-y: auto; }
+.page { max-width: 1200px; margin: 0 auto; padding: 32px 40px 64px; }
+.page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+.page-head h1 { margin: 0 0 4px; font-size: 22px; letter-spacing: -.01em; }
+.page-head p { margin: 0; }
+.seg { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); cursor: pointer; user-select: none; }
+.repo { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; margin-bottom: 16px; overflow: hidden; }
+.repo-head { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+.repo-head h3 { margin: 0; font-size: 15px; }
+.repo-head .path { font-family: var(--mono); font-size: 11.5px; color: var(--faint); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wt { display: grid; grid-template-columns: minmax(200px, 300px) 1fr; border-bottom: 1px solid var(--line); }
+.wt:last-child { border-bottom: 0; }
+.wt-meta { padding: 12px 16px; border-right: 1px solid var(--line); min-width: 0; }
+.wt-branch { font-family: var(--mono); font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 6px; min-width: 0; }
+.wt-branch span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wt-branch .tag { font-family: var(--sans); font-size: 10.5px; font-weight: 600; color: var(--muted); background: var(--chip); border-radius: 4px; padding: 0 5px; flex: none; }
+.wt-path { font-family: var(--mono); font-size: 11px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 2px; }
+.wt-actions { display: flex; gap: 4px; margin-top: 8px; }
+.wt-actions button { height: 24px; font-size: 12px; padding: 0 8px; }
+.wt-agents { padding: 6px 8px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.wt-none { color: var(--faint); font-size: 12.5px; padding: 8px; }
+.agent-row { display: grid; grid-template-columns: auto auto minmax(0, 220px) 1fr auto; gap: 10px; align-items: center; padding: 7px 8px; border-radius: 8px; cursor: pointer; }
+.agent-row:hover { background: var(--hover); }
+.agent-row .title { font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-row .last { color: var(--muted); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-row .where { font-size: 11.5px; color: var(--faint); white-space: nowrap; }
+.status-label { font-size: 11.5px; color: var(--muted); white-space: nowrap; }
+.agents-empty { text-align: center; color: var(--muted); padding: 48px 0; }
+
+/* ─── Hộp thoại, thông báo ───────────────────────────────────────────────── */
+.modal { position: fixed; inset: 0; background: rgba(15,19,24,.36); display: grid; place-items: center; z-index: 100; }
+.dialog { width: 480px; max-width: calc(100vw - 32px); background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+  box-shadow: 0 24px 64px rgba(var(--shadow-c), .3); padding: 20px 22px; }
+.dialog h3 { margin: 0 0 4px; font-size: 16px; }
+.dialog p { margin: 0 0 14px; color: var(--muted); font-size: 13px; }
+.dialog label { display: block; font-size: 12.5px; font-weight: 600; margin: 12px 0 4px; }
+.dialog input, .dialog select { width: 100%; }
+.dialog .help { font-size: 12px; color: var(--faint); margin-top: 4px; }
+.dialog .err { color: var(--danger); font-size: 12.5px; margin-top: 10px; }
+.dialog .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+.toast { position: fixed; left: 50%; bottom: 72px; transform: translateX(-50%); background: #1b2330; color: #fff; padding: 9px 14px;
+  border-radius: 9px; font-size: 13px; z-index: 120; box-shadow: 0 10px 30px rgba(0,0,0,.25); max-width: 560px; }
+.dialog label.field span { display: block; margin-bottom: 4px; }
+.dialog .limit-now { margin-top: 16px; padding: 8px 12px; border-radius: 8px; background: var(--sunken); color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.empty-card.inline { margin: 48px auto; text-align: center; }
+.agent-row .status-label { display: inline-flex; align-items: center; gap: 6px; }
+
+/* Sub agent của node Claude: dải dưới thân node */
+.subagents { flex: none; border-top: 1px solid var(--border); background: var(--sunken); font-size: 12px; max-height: 45%; display: flex; flex-direction: column; }
+.sub-head { display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 10px; border: 0; background: transparent; color: var(--text); text-align: left; width: 100%; border-radius: 0; }
+.sub-head:hover { background: var(--hover); }
+.sub-head .chev { color: var(--faint); width: 10px; transition: transform .15s; display: inline-block; }
+.sub-head .chev.open { transform: rotate(90deg); }
+.sub-list { overflow: auto; padding: 0 6px 6px; }
+.sub-row { display: grid; grid-template-columns: 8px auto minmax(0, 1fr) minmax(0, 1.2fr) auto; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 6px; }
+.sub-row:hover { background: var(--hover); }
+.sub-row.done { color: var(--muted); }
+.sub-type { font-weight: 600; font-size: 11px; background: var(--chip); border-radius: 4px; padding: 1px 6px; }
+.sub-desc, .sub-tool { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sub-tool { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.sub-meta { color: var(--faint); font-size: 11px; white-space: nowrap; }
+.status-dot.done { background: var(--ok); }
+.node.has-subs .node-body { border-radius: 0; }
+.subagents { border-radius: 0 0 var(--radius) var(--radius); }

@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Menorah bảy nhánh trên lưới icon macOS: ô 824 nằm giữa khung 1024. Nền lấy màu accent và accent-hover của git.html. Ba cặp nhánh là ba nửa vòng tròn cùng tâm (512, 330), bán kính 90, 180, 270; bảy đài đèn cách nhau 90. Chú thích XML cấm hai gạch nối liền. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2a78f0"/>
+      <stop offset="1" stop-color="#185ccc"/>
+    </linearGradient>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="184" fill="url(#bg)"/>
+  <g fill="none" stroke="#fff" stroke-width="36" stroke-linecap="round">
+    <path d="M242 330a270 270 0 0 0 540 0"/>
+    <path d="M332 330a180 180 0 0 0 360 0"/>
+    <path d="M422 330a90 90 0 0 0 180 0"/>
+    <path d="M512 330v420" stroke-width="44"/>
+  </g>
+  <g fill="#fff">
+    <rect x="206" y="304" width="72" height="30" rx="10"/>
+    <rect x="296" y="304" width="72" height="30" rx="10"/>
+    <rect x="386" y="304" width="72" height="30" rx="10"/>
+    <rect x="476" y="304" width="72" height="30" rx="10"/>
+    <rect x="566" y="304" width="72" height="30" rx="10"/>
+    <rect x="656" y="304" width="72" height="30" rx="10"/>
+    <rect x="746" y="304" width="72" height="30" rx="10"/>
+    <rect x="432" y="734" width="160" height="34" rx="12"/>
+    <rect x="382" y="760" width="260" height="40" rx="14"/>
+  </g>
+  <g fill="#ffc94d">
+    <path d="M242 228c26 30 30 52 22 66a26 26 0 0 1-44 0c-8-14-4-36 22-66z"/>
+    <path d="M332 228c26 30 30 52 22 66a26 26 0 0 1-44 0c-8-14-4-36 22-66z"/>
+    <path d="M422 228c26 30 30 52 22 66a26 26 0 0 1-44 0c-8-14-4-36 22-66z"/>
+    <path d="M512 228c26 30 30 52 22 66a26 26 0 0 1-44 0c-8-14-4-36 22-66z"/>
+    <path d="M602 228c26 30 30 52 22 66a26 26 0 0 1-44 0c-8-14-4-36 22-66z"/>
+    <path d="M692 228c26 30 30 52 22 66a26 26 0 0 1-44 0c-8-14-4-36 22-66z"/>
+    <path d="M782 228c26 30 30 52 22 66a26 26 0 0 1-44 0c-8-14-4-36 22-66z"/>
+  </g>
+</svg>

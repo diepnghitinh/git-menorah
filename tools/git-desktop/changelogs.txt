@@ -1,0 +1,117 @@
+GitMenorah: changelog
+=====================
+
+Newest release first.
+
+
+1.0.4 (2026-10-21)
+------------------
+
+New
+- New worktree from the main worktree. Press + next to "Worktrees" in the
+  sidebar, use the main worktree menu, or right-click any worktree and choose
+  "New worktree from <branch>…". The branch defaults to the one the main
+  worktree is on, and the worktree is created in .worktrees/<name>.
+- The canvas, Chat panel, notch, Settings dialog, menorah-context command and
+  agentd messages are now fully in English.
+- README.md with screenshots, and the MIT License (LICENSE).
+- The Git page runs on its own: node tools/git-server.mjs serves git.html,
+  with no dev-runner around it. The desktop app uses the same server.
+- "Add Project Folder…" (Shift+Cmd+O) adds a folder of repositories as a
+  project group. It replaces "Open Project Folder…".
+
+Changes
+- Publisher is now InChurch.app (app copyright and Windows company name).
+- Repositories and project groups are saved in ~/.config/gitmenorah/git.json
+  (GITMENORAH_CONF to change). Repositories added in earlier versions have to
+  be added again.
+- Gitflow protection applies only to repositories that have a develop branch.
+- Repository labels show the full folder name.
+- Linking node_modules into new worktrees is off by default; turn it on with
+  "linkNodeModules": true in git.json.
+- Theme, layout and the last opened repository are reset once.
+- Messages say "pull request" instead of "merge request".
+- The "New branch" dialog keeps its own "Open in its own worktree" choice;
+  creating a worktree from the + button no longer changes it.
+
+
+1.0.3 (2026-10-21)
+------------------
+
+All heavy work of the agent canvas moved to a child process, menorah-agentd,
+written in Go. Electron only relays data. Screens and interactions are
+unchanged.
+
+New
+- menorah-agentd runs terminals (PTY), CPU / RAM limits, the Chat panel,
+  sub agents, the notch, Codex session discovery and the menorah-context
+  command.
+- If agentd crashes, open terminals report "exited" instead of hanging in
+  "Running". agentd restarts after 1 second and reloads the CPU / RAM limits
+  and canvas wiring. Claude / Codex sessions reopen from the canvas, just like
+  after quitting the app.
+- If Electron dies unexpectedly, agentd stops every session and exits, so no
+  agent is left orphaned.
+- agentd idles at about 6 MB of RAM. Reading transcripts takes about 12 MB,
+  down from up to 423 MB.
+
+Fixes
+- The Chat panel shows the tool summary line again (e.g. "Bash · npm test").
+  The old code had two functions with the same name, so the line was always
+  empty.
+- Pressing Cancel in the "terminals still running" dialog on quit keeps the
+  sessions alive. The old version stopped them anyway.
+
+Technical changes
+- Removed node-pty and workspace/limits.cjs. Windows uses ConPTY.
+- The terminal replay buffer is still capped at 512 KB, now counted in bytes.
+  When full it is trimmed to 384 KB in one step.
+- Without the agentd binary the app still opens and the Git tab works; only
+  terminals report "Could not start menorah-agentd".
+
+Notes
+- Building needs Go 1.22 or later. No cgo, so the Windows build can be made on
+  a Mac.
+- Run from source: cd tools/git-desktop && npm ci && npm start. npm start
+  builds bin/menorah-agentd first. bin/ is not tracked by git.
+- npm run agentd only works on macOS / Linux. On Windows, build with
+  tools/build-git.sh --platform=windows.
+- Windows: CPU / RAM limits are measured, not enforced.
+
+
+1.0.2 (2026-10-21)
+------------------
+
+New
+- GitMenorah → Settings… (⌘,): set max CPU (cores) and max RAM (GB) for the
+  whole process tree under every terminal. Values are stored in settings.json.
+  - Over CPU: child processes are throttled by pausing and resuming them in
+    100 ms cycles.
+  - Over RAM: the child process using the most RAM is stopped and a toast
+    tells you.
+  - The session shell and the agent itself are never throttled or stopped.
+  - Windows only measures, it does not enforce.
+
+
+1.0.1 (2026-10-21)
+------------------
+
+New
+- Terminal button in the Git tab, between Refresh and the theme button. It
+  opens a shell in the bottom tray at the repository / worktree being viewed,
+  without adding a canvas node. Each tab is one shell: + opens another, x stops
+  it, typing exit closes the tab. Shortcut ⌃`.
+- The bottom tray has two tabs: Command history | Terminal. The Terminal tab
+  only shows while a shell is alive. Click the open tab again to close the
+  tray; shells keep running.
+- Drag the top edge of the tray to resize it; each tab remembers its own
+  height. Double-click the handle to reset to 260 px.
+- Shells follow the page theme and switch colors when the theme changes.
+
+Fixes
+- Packaged builds reported "This build has no xterm": the app blocked the
+  /vendor/ folder by mistake.
+- The Sub agent strip and menu showed the word "null".
+- Command history was squashed, entries overlapped and output was cut off.
+- Reloading the page only reconnects shells that are still alive; it no longer
+  opens new shells after the app restarts.

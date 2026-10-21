@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; frame-src http://127.0.0.1:*; connect-src 'self'; font-src 'self' data:">
+<title>GitMenorah</title>
+<link rel="stylesheet" href="vendor/xterm/css/xterm.css">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+
+<nav id="rail" aria-label="Main menu">
+  <div class="rail-top"></div>
+  <button id="project-btn" class="rail-project" title="Switch project"><span id="project-initial">+</span></button>
+  <div class="rail-sep"></div>
+  <button class="rail-btn" data-view="git" title="Project · Git (⌘1)">
+    <svg class="i" viewBox="0 0 24 24"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.7-.9l-.8-1.2A2 2 0 0 0 7.9 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/><circle cx="12" cy="13" r="1.6"/><path d="M12 14.6V17M13.4 12.2l2.1-1.2"/></svg>
+    <span class="rail-lb">Project</span>
+  </button>
+  <button class="rail-btn" data-view="canvas" title="Canvas (⌘2)">
+    <svg class="i" viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="7" rx="1.5"/><rect x="13" y="3" width="8" height="11" rx="1.5"/><rect x="3" y="12" width="8" height="9" rx="1.5"/><rect x="13" y="16" width="8" height="5" rx="1.5"/></svg>
+    <span class="rail-lb">Canvas</span>
+    <span id="rail-running" class="rail-badge" hidden></span>
+  </button>
+</nav>
+<div id="project-menu" class="menu" hidden></div>
+<div id="canvas-menu" class="menu" hidden></div>
+<div id="node-menu" class="menu" role="menu" hidden></div>
+
+<main>
+  <section id="view-canvas" class="view">
+    <div id="stage" tabindex="-1">
+      <div id="world">
+        <svg id="links" width="1" height="1"></svg>
+        <div id="nodes"></div>
+      </div>
+    </div>
+
+    <div id="canvas-head" aria-hidden="true"></div>
+    <div id="canvas-bar" class="toolbar canvas-bar">
+      <span id="project-name" class="cb-project">No project</span><span class="cb-sep">/</span>
+      <nav id="canvas-tabs" class="canvas-tabs" aria-label="Canvas"></nav>
+    </div>
+
+    <div id="toolbar" class="toolbar">
+      <button data-new="claude" title="New Claude Code (⌘T)"><span class="agent-mark claude">C</span><span class="lbl">Claude</span></button>
+      <button data-new="codex" title="New Codex (⇧⌘T)"><span class="agent-mark codex">X</span><span class="lbl">Codex</span></button>
+      <button data-new="shell" title="New terminal (⌥⌘T)"><svg class="i" viewBox="0 0 24 24"><path d="m4 17 6-5-6-5M12 19h8"/></svg><span class="lbl">Terminal</span></button>
+      <button data-new="note" title="Note"><svg class="i" viewBox="0 0 24 24"><path d="M15.5 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8.5L15.5 3Z"/><path d="M15 3v6h6"/></svg><span class="lbl">Note</span></button>
+      <span class="sep"></span>
+      <button id="shots-btn" title="Recent screenshots — drag into a terminal"><svg class="i" viewBox="0 0 24 24"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3Z"/><circle cx="12" cy="13" r="3"/></svg><span class="lbl">Screenshots</span></button>
+      <button id="resume-all" hidden title="Resume stopped sessions"><svg class="i" viewBox="0 0 24 24"><path d="m6 4 14 8-14 8V4Z"/></svg><span class="lbl">Resume</span> <span id="resume-count"></span></button>
+    </div>
+
+    <div id="zoombar" class="toolbar zoombar">
+      <button id="zoom-out" title="Zoom out"><svg class="i" viewBox="0 0 24 24"><path d="M5 12h14"/></svg></button>
+      <button id="zoom-reset" class="zoom-val" title="Reset to 100%">100%</button>
+      <button id="zoom-in" title="Zoom in"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+      <span class="sep"></span>
+      <button id="zoom-fit" title="Fit to screen (⌘0)"><svg class="i" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg></button>
+      <button id="minimap-toggle" title="Minimap"><svg class="i" viewBox="0 0 24 24"><path d="M14.1 6.3 9.9 3.7a2 2 0 0 0-1.8 0L3.6 5.8A1 1 0 0 0 3 6.7v12.6a1 1 0 0 0 1.4.9l3.9-2a2 2 0 0 1 1.8 0l4.2 2.6a2 2 0 0 0 1.8 0l4.5-2.1a1 1 0 0 0 .6-.9V4.7a1 1 0 0 0-1.4-.9l-3.9 2a2 2 0 0 1-1.8 0Z"/><path d="M15 5.8v15M9 3.2v15"/></svg></button>
+    </div>
+
+    <div id="minimap" class="toolbar minimap" hidden title="Click or drag to jump there"><svg></svg></div>
+
+    <div id="shots" class="popover shots" hidden>
+      <div class="popover-head"><b>Recent screenshots</b><span class="muted">Drop one into a terminal or the chat box</span></div>
+      <div id="shots-list" class="shots-list"></div>
+    </div>
+
+    <div id="canvas-empty" class="empty" hidden>
+      <div class="empty-card">
+        <h2>Empty canvas</h2>
+        <p>Open an agent to get started. Every node is a real terminal: type as you would in the CLI, or switch to Chat.</p>
+        <div class="empty-actions">
+          <button class="primary" data-new="claude"><span class="agent-mark claude">C</span>Claude Code</button>
+          <button data-new="codex"><span class="agent-mark codex">X</span>Codex</button>
+          <button data-new="shell">Terminal</button>
+        </div>
+        <ul class="hints">
+          <li><b>Drag the background</b> or scroll with two fingers to pan, <b>⌘ + scroll</b> to zoom</li>
+          <li><b>Right-click the background</b> to add an agent, terminal or note right there</li>
+          <li><b>Drag a node corner</b> to resize, <b>double-click the title</b> to rename</li>
+          <li><b>Drag the link dot</b> in a title bar onto another node so agents can read each other’s context</li>
+          <li><b>Drop files or images</b> into a terminal to hand their paths to the agent; paste images with ⌘V</li>
+        </ul>
+      </div>
+    </div>
+
+    <div id="no-project" class="empty" hidden>
+      <div class="empty-card">
+        <h2>Choose a project folder</h2>
+        <p>A project is a folder — usually a repository, or a folder holding several — with canvases of its own. GitMenorah keeps canvases in its app data and never writes files into your repos.</p>
+        <div class="empty-actions"><button class="primary" id="add-project-btn">Open Folder…</button></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="view-git" class="view" hidden>
+    <iframe id="git-frame" title="Git"></iframe>
+  </section>
+</main>
+
+<div id="modal" class="modal" hidden></div>
+<div id="toast" class="toast" hidden></div>
+
+<script src="vendor/xterm/lib/xterm.js"></script>
+<script src="vendor/addon-fit/lib/addon-fit.js"></script>
+<script src="vendor/addon-unicode11/lib/addon-unicode11.js"></script>
+<script src="vendor/addon-web-links/lib/addon-web-links.js"></script>
+<script src="util.js"></script>
+<script src="chat.js"></script>
+<script src="canvas.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
