@@ -68,7 +68,7 @@ GitMenorah treats worktrees as the default way to work, not an advanced trick.
 ## Canvas
 
 - **Infinite, zoomable workspace** with a minimap. `⌘0` fits everything on screen.
-- **Multiple canvases per project.** Keep one per feature, sprint or experiment.
+- **Tabs per project.** Each tab is its own canvas. The **+** opens a tab on a folder, on a repository you already have, or on a fresh clone.
 - **Notes** sit next to the agents they describe and can be shared with them through wires.
 - **Layouts persist.** Close the app and your canvas, wires and sessions are where you left them.
 - **Multiple windows.** `⌘N` opens another window, for example Git on one screen and the canvas on another.
@@ -82,13 +82,24 @@ GitMenorah treats worktrees as the default way to work, not an advanced trick.
 - **Branches, remotes and stashes** in one sidebar, with fetch, pull, push, stash and pop.
 - **Review before run.** Every action opens a dialog with the exact `git` commands and any warnings. **Command history** in the bottom tray keeps a record of what ran and what it printed.
 - **Project groups.** Add every repository of a multi-repo product once, then fetch all of them in one click.
+- **Clone from URL.** Paste an HTTPS or SSH URL, or pick from the repositories of a signed-in account (`⇧⌘C`).
 - **Gitflow guard.** In repositories that have a `develop` branch, `main`, `master`, `staging` and `prod` only take changes through pull requests, and merging `develop` into them is refused. Repositories without `develop` are left alone.
+
+---
+
+## Accounts
+
+Open **GitMenorah → Accounts…** (or **Settings… → Accounts**) to sign in to GitHub, GitHub Enterprise, GitLab, Bitbucket Cloud or any other git host with a personal access token, as in Sourcetree. GitMenorah checks the token with the provider, then hands it to git's credential helper (macOS Keychain or Git Credential Manager). Fetch, pull, push and clone then work without password prompts, in the app and in your own terminals. GitMenorah stores no copy of the token.
+
+- **GitHub:** a classic token with `repo` and `read:org` (add `workflow` to push Actions files), or a fine-grained token with Contents read and write.
+- **GitLab:** `read_api`, `read_repository`, `write_repository`.
+- **Bitbucket Cloud:** an Atlassian API token with Bitbucket scopes `read:user`, `read:workspace`, `read:repository`, `write:repository`, plus your Atlassian email.
 
 ---
 
 ## Resource limits
 
-Open **GitMenorah → Settings…** (`⌘,`) and set:
+Open **GitMenorah → Settings… → Terminal limits** (`⌘,`) and set:
 
 - **Max CPU (cores):** processes started from your terminals are throttled once they exceed the limit.
 - **Max RAM (GB):** when the limit is hit, the process using the most memory is stopped and you get a notification.
@@ -159,6 +170,7 @@ Output goes to `tools/git-desktop/dist/`. Windows builds can be produced on a Ma
 | New window | `⌘N` | `Ctrl+N` |
 | Add repository | `⌘O` | `Ctrl+O` |
 | Add project folder | `⇧⌘O` | `Ctrl+Shift+O` |
+| Clone repository | `⇧⌘C` | `Ctrl+Alt+C` |
 | Terminal tray (Git tab) | `` ⌃` `` | `` Ctrl+` `` |
 | Settings | `⌘,` | `Ctrl+,` |
 

@@ -34,6 +34,8 @@ const ICON = {
   plus: '<path d="M12 5v14M5 12h14"/>',
   note: '<path d="M15.5 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8.5L15.5 3Z"/><path d="M15 3v6h6"/>',
   check: '<path d="m5 12 5 5L20 7"/>',
+  download: '<path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 21h14"/>',
+  user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
 };
 const icon = (name, cls = '') => { const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('class', `i ${cls}`); s.innerHTML = ICON[name]; return s; };
 
@@ -135,5 +137,8 @@ function timeAgo(ms) {
   const h_ = Math.round(m / 60);
   return h_ < 24 ? `${h_} h ago` : `${Math.round(h_ / 24)} d ago`;
 }
+
+// ipcRenderer.invoke errors carry an "Error invoking remote method '…': Error: " prefix — drop it.
+const errText = (e) => String(e?.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
 
 const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };

@@ -155,6 +155,7 @@
   .gd-wrap{max-width:1240px;margin:0 auto;padding:28px 32px 48px}
   .gd-head{display:flex;align-items:flex-end;gap:16px;margin-bottom:18px}
   .gd-head .t{flex:1;min-width:0}
+  .gd-acts{display:flex;gap:8px}
   .gd-head h2{font-size:20px;margin:0 0 2px;font-weight:650}
   .gd-head .sub{font-size:12.5px;color:var(--faint)}
   .gd-tiles{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-bottom:28px}
@@ -1210,6 +1211,7 @@ function gkRepoMenu(b) {
     gitView === 'repo' && { label: 'Projects overview', act: () => gkSetView('projects') },
     { label: 'Add project folder…', act: gkAddGroupDialog },
     { label: 'Add repository outside the project…', act: gkAddExtraDialog },
+    MN.on && { label: 'Clone from URL…', act: () => mnPost({ type: 'menorah:clone' }) },
     g && '-', g && { hd: `Project: ${g.name}` },
     g && { label: 'Fetch all repositories in this project', disabled: gitBusy, act: () => gitFetchAll(gitList.filter((r) => r.group === g.id), g.name) },
     g && { label: 'Rescan the folder', title: g.path, act: () => gkRescanGroup(g) },
@@ -1487,6 +1489,13 @@ if (window.parent !== window) {
       MN.agents = m.agents.filter((a) => a && typeof a.cwd === 'string').map((a) => ({ ...a, cwd: normPath(a.cwd) }));
       gkRenderAgents();
     } else if (m.type === 'menorah:side') { mnEnable(); mnSide(m.tab); }
+    else if (m.type === 'menorah:repos-changed') {
+      // A clone finished in the app: reload the list and show the new repository.
+      gitLoadList(true).then(() => {
+        const r = typeof m.dir === 'string' && gitList.find((x) => normPath(x.dir) === normPath(m.dir));
+        if (r) gkSelect(r.id, '');
+      });
+    }
   });
   $('gkSideTabs').addEventListener('click', (e) => {
     const b = e.target.closest('[data-side]');
@@ -2907,7 +2916,7 @@ function gkRenderDash() {
   el.innerHTML = `<div class="gd-wrap">
     <div class="gd-head"><div class="t"><h2>Projects</h2>
       <div class="sub">Every repository in the list, with its worktrees. Ahead/behind counts are as of each repository's last fetch.</div></div>
-      <button data-dact="add">Add project folder…</button></div>
+      <div class="gd-acts">${MN.on ? '<button data-dact="clone">Clone from URL…</button>' : ''}<button data-dact="add">Add project folder…</button></div></div>
     <div class="gd-tiles">${tiles.map(([k, label, v, s]) => `<button class="gd-tile ${fk === k ? 'on' : ''}" data-dtile="${k}" aria-pressed="${fk === k}"
       title="${k === 'all' ? 'Show every repository' : 'Show only these — click again to show all'}">
       <span class="k">${k !== 'all' && k !== 'wt' && v ? '<i></i>' : ''}${label}</span><span class="v">${v}</span><span class="s">${esc(s)}</span></button>`).join('')}</div>
@@ -2931,6 +2940,7 @@ $('gkDash').addEventListener('click', (e) => {
   }
   const a = b?.dataset.dact;
   if (a === 'add') return gkAddGroupDialog();
+  if (a === 'clone') return mnPost({ type: 'menorah:clone' });
   if (a === 'fetch' || a === 'more') {
     const k = b.dataset.key, g = gitGroups.find((x) => x.id === k);
     if (a === 'more') {

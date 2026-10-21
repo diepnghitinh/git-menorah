@@ -297,12 +297,13 @@ async function firstRunHint(win) {
   const { response } = await dialog.showMessageBox(win, {
     type: 'info',
     message: 'No repositories yet',
-    detail: 'Add a single git repository, or a folder that holds several of them.',
-    buttons: ['Add Repository…', 'Add Project Folder…', 'Later'],
-    defaultId: 0, cancelId: 2,
+    detail: 'Clone one from a URL, add a git repository on this machine, or a folder that holds several of them.',
+    buttons: ['Clone from URL…', 'Add Repository…', 'Add Project Folder…', 'Later'],
+    defaultId: 0, cancelId: 3,
   });
-  if (response === 0) addRepository();
-  if (response === 1) addProjectFolder();
+  if (response === 0) command(win, { type: 'clone' });
+  if (response === 1) addRepository();
+  if (response === 2) addProjectFolder();
 }
 
 function buildMenu() {
@@ -314,6 +315,7 @@ function buildMenu() {
         { role: 'about' },
         { type: 'separator' },
         { label: 'Settings…', accelerator: 'CmdOrCtrl+,', click: toFocused({ type: 'settings' }) },
+        { label: 'Accounts…', click: toFocused({ type: 'settings', tab: 'accounts' }) },
         { type: 'separator' },
         { role: 'services' },
         { type: 'separator' },
@@ -334,10 +336,11 @@ function buildMenu() {
         { type: 'separator' },
         { label: 'Open Folder as Project…', click: toFocused({ type: 'add-project' }) },
         { type: 'separator' },
+        { label: 'Clone Repository…', accelerator: mac ? 'Cmd+Shift+C' : 'Ctrl+Alt+C', click: toFocused({ type: 'clone' }) },
         { label: 'Add Repository…', accelerator: 'CmdOrCtrl+O', click: addRepository },
         { label: 'Add Project Folder…', accelerator: 'CmdOrCtrl+Shift+O', click: addProjectFolder },
         { type: 'separator' },
-        ...(mac ? [] : [{ label: 'Settings…', accelerator: 'CmdOrCtrl+,', click: toFocused({ type: 'settings' }) }, { type: 'separator' }]),
+        ...(mac ? [] : [{ label: 'Settings…', accelerator: 'CmdOrCtrl+,', click: toFocused({ type: 'settings' }) }, { label: 'Accounts…', click: toFocused({ type: 'settings', tab: 'accounts' }) }, { type: 'separator' }]),
         mac ? { role: 'close' } : { role: 'quit' },
       ],
     },
@@ -403,7 +406,7 @@ if (!app.requestSingleInstanceLock()) {
 
     guardRequests();
     serveApp();
-    await workspace.setup({ app, gitOrigin: () => server.origin, settings: { load: loadSettings, save: saveSettings } });
+    await workspace.setup({ app, gitOrigin: () => server.origin, api, settings: { load: loadSettings, save: saveSettings } });
     setNotch(loadSettings().notch !== false);
     buildMenu();
     const win = createWindow(undefined, 0);

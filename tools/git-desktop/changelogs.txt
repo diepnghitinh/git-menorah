@@ -4,6 +4,33 @@ GitMenorah: changelog
 Newest release first.
 
 
+Unreleased
+----------
+
+New
+- Accounts (Settings → Accounts, or GitMenorah → Accounts…): sign in to
+  GitHub, GitHub Enterprise, GitLab (also self-hosted), Bitbucket Cloud or any
+  other host with a personal access token, like in Sourcetree. The token is
+  checked with the provider and stored by git's credential helper (macOS
+  Keychain or Git Credential Manager), so fetch, pull, push and clone use it in
+  the app and in every terminal. GitMenorah keeps no copy; git.json only lists
+  the accounts. If git has no credential helper, Settings offers to turn one on.
+- Clone from URL (File → Clone Repository…, ⇧⌘C / Ctrl+Alt+C; the + of the
+  canvas tab bar; the repository menu and Projects page of the Git tab). Paste
+  an HTTPS or SSH URL, or pick a repository from a signed-in account. The dialog
+  shows the exact git clone command; the clone runs in the background and the
+  repository is added to the Git tab (to its project group when it lands in a
+  project folder). The last "Clone into" folder is remembered.
+- The first-run prompt offers "Clone from URL…".
+
+Changes
+- Canvas tab bar: no project name in front of the tabs. A new project's first
+  tab is named after the project folder. The + menu is now just "Open Folder…",
+  "Clone from URL…" and the repositories you already have (with a filter when
+  there are many).
+- Settings has tabs: Accounts and Terminal limits.
+
+
 1.0.4 (2026-10-21)
 ------------------
 

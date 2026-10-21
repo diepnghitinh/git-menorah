@@ -57,5 +57,12 @@ contextBridge.exposeInMainWorld('menorah', {
   setLimits: (l) => ipcRenderer.invoke('ws:limits-set', l),
   onLimitAlert: listeners('ws:limit-alert'),
 
+  // Git cloud accounts (token goes to git's credential helper) and Clone from URL.
+  accounts: () => ipcRenderer.invoke('ws:accounts'),
+  accountsOp: (body) => ipcRenderer.invoke('ws:accounts-op', body),
+  clone: (body) => ipcRenderer.invoke('ws:clone', body),
+  cloneStatus: (job) => ipcRenderer.invoke('ws:clone-status', job),
+  pickDir: (opts) => ipcRenderer.invoke('ws:pick-dir', opts),
+
   onCommand: listeners('ws:command'),
 });

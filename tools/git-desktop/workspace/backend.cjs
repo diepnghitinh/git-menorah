@@ -63,7 +63,7 @@ const canvasFile = (id) => path.join(dirs.canvas, `${id.replace(/[^\w.-]/g, '_')
 function loadProjects() {
   const st = readJson(projectsFile(), { projects: [], lastId: null });
   for (const p of st.projects) {
-    if (!Array.isArray(p.canvases) || !p.canvases.length) p.canvases = [{ id: p.id, name: 'Canvas 1' }];
+    if (!Array.isArray(p.canvases) || !p.canvases.length) p.canvases = [{ id: p.id, name: p.name }];
     if (!p.canvases.some((c) => c.id === p.canvasId)) p.canvasId = p.canvases[0].id;
   }
   return st;
@@ -83,7 +83,7 @@ function addProject(dir) {
   let p = st.projects.find((x) => x.cwd === cwd);
   if (!p) {
     p = { id: uid('p'), name: path.basename(cwd), cwd, createdAt: Date.now() };
-    p.canvases = [{ id: p.id, name: 'Canvas 1' }];
+    p.canvases = [{ id: p.id, name: p.name }];
     p.canvasId = p.id;
     st.projects.push(p);
   }
@@ -335,7 +335,7 @@ function on(ch, fn) {
 }
 
 // settings: { load, save } — userData/settings.json của main.cjs; giới hạn lưu ở khoá `limits`.
-async function setup({ app, gitOrigin, settings }) {
+async function setup({ app, gitOrigin, api, settings }) {
   dirs = {
     root: path.join(app.getPath('userData'), 'workspace'),
     canvas: path.join(app.getPath('userData'), 'workspace', 'canvas'),
@@ -417,7 +417,8 @@ async function setup({ app, gitOrigin, settings }) {
     if (typeof opts === 'string') opts = { name: opts };
     let cwd = opts.cwd ? String(opts.cwd) : null;
     if (opts.pick) {
-      const r = await dialog.showOpenDialog(BrowserWindow.fromWebContents(e.sender), { title: 'Choose a folder for the canvas', properties: ['openDirectory', 'createDirectory'] });
+      const from = loadProjects().projects.find((x) => x.id === projectId)?.cwd;
+      const r = await dialog.showOpenDialog(BrowserWindow.fromWebContents(e.sender), { title: 'Choose a folder for the new tab', defaultPath: from, properties: ['openDirectory', 'createDirectory'] });
       if (r.canceled) return null;
       cwd = r.filePaths[0];
     }
@@ -551,6 +552,19 @@ async function setup({ app, gitOrigin, settings }) {
     req.setTimeout(5000, () => { req.destroy(); done([]); });
   }));
   handle('ws:canvas-stats', (e, projectId) => canvasStats(projectId));
+
+  // Git cloud accounts and Clone live in the Git server (git-server.mjs); this only relays.
+  // Tokens go one way — the server never sends them back.
+  handle('ws:accounts', () => api('/api/git/accounts'));
+  handle('ws:accounts-op', (e, body) => api('/api/git/accounts', body && typeof body === 'object' ? body : {}));
+  handle('ws:clone', (e, body) => api('/api/git/clone', body && typeof body === 'object' ? body : {}));
+  handle('ws:clone-status', (e, job) => api(`/api/git/clone?job=${encodeURIComponent(String(job))}`));
+  handle('ws:pick-dir', async (e, { title, from } = {}) => {
+    const r = await dialog.showOpenDialog(BrowserWindow.fromWebContents(e.sender), {
+      title: String(title || 'Choose a folder'), defaultPath: typeof from === 'string' && fs.existsSync(from) ? from : HOME, properties: ['openDirectory', 'createDirectory'],
+    });
+    return r.canceled ? null : r.filePaths[0];
+  });
 
   // Giới hạn CPU / RAM (agentd): áp cho mọi phiên PTY, kể cả khay Terminal của tab Git.
   handle('ws:limits', () => agentd.call('limits'));

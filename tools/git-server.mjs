@@ -11,8 +11,9 @@
 //   import { gitRoute, loadGitConf } from './git-server.mjs';
 //   await loadGitConf();  …  if (await gitRoute(req, res, url)) return;
 //
-// Repositories and project groups the user adds are stored in ~/.config/gitmenorah/git.json
-// (outside any repo). Override the location with GITMENORAH_CONF=<file>.
+// Repositories, project groups and git cloud accounts the user adds are stored in
+// ~/.config/gitmenorah/git.json (outside any repo). Override the location with GITMENORAH_CONF=<file>.
+// Account tokens are not in that file: they go to git's own credential helper (Keychain…).
 //
 // SAFETY: this is "run git on my machine" over HTTP, so:
 //   • listen on 127.0.0.1 only and reject unknown Host headers (DNS rebinding);
@@ -41,7 +42,8 @@ function sh(cmd, args) {
 }
 
 // ─── Settings ──────────────────────────────────────────────────────────────
-// { extra: [repo dir], groups: [{ id, name, path, repos, addedAt }], linkNodeModules }
+// { extra: [repo dir], groups: [{ id, name, path, repos, addedAt }], linkNodeModules,
+//   accounts: [{ id, service, host, username, email, name, protocol, addedAt }], cloneDir }
 // `linkNodeModules`: a new worktree gets symlinks to the main worktree's node_modules
 // (every folder with a tracked package.json). Off by default — npm install inside the
 // worktree would then write into the main worktree's packages.
@@ -58,6 +60,8 @@ export async function loadGitConf() {
           repos: (Array.isArray(g.repos) ? g.repos : []).filter((d) => typeof d === 'string' && isAbsolute(d)) }));
     }
     linkDeps = c.linkNodeModules === true;
+    if (Array.isArray(c.accounts)) gitAccounts = c.accounts.filter((a) => a && SERVICES[a.service] && HOST_RE.test(a.host || '') && USER_RE.test(a.username || ''));
+    if (typeof c.cloneDir === 'string' && isAbsolute(c.cloneDir)) cloneDir = c.cloneDir;
   } catch {}
   gitReposP = null;
 }
@@ -65,7 +69,7 @@ export async function loadGitConf() {
 async function saveConf() {
   try {
     await mkdir(dirname(CONF_FILE), { recursive: true });
-    await writeFile(CONF_FILE, JSON.stringify({ extra: gitExtra, groups: gitGroups, linkNodeModules: linkDeps }, null, 2) + '\n');
+    await writeFile(CONF_FILE, JSON.stringify({ extra: gitExtra, groups: gitGroups, linkNodeModules: linkDeps, accounts: gitAccounts, cloneDir }, null, 2) + '\n');
   } catch (e) { console.error(`Could not write ${CONF_FILE}: ${e.message}`); }
 }
 
@@ -1225,6 +1229,223 @@ async function gitAddExtra(body) {
   return gitList(true);
 }
 
+// ─── Git cloud accounts ───
+// Like Sourcetree's Accounts: sign in to GitHub, GitLab or Bitbucket with a personal access
+// token. The token is handed to git's own credential helper (`git credential approve`), so
+// fetch/push here, in the Terminal tray and in agents' terminals all use it. git.json only keeps
+// who is signed in where. The provider API is called to check the token and to list
+// repositories for the Clone dialog; the token is read back from the helper each time.
+const SERVICES = {
+  github: { label: 'GitHub', host: 'github.com', api: (h) => (h === 'github.com' ? 'https://api.github.com' : `https://${h}/api/v3`) },
+  gitlab: { label: 'GitLab', host: 'gitlab.com', api: (h) => `https://${h}/api/v4` },
+  bitbucket: { label: 'Bitbucket', host: 'bitbucket.org', api: () => 'https://api.bitbucket.org/2.0' },
+  other: { label: 'Other host', host: '' },
+};
+const HOST_RE = /^(?=.{1,253}(:|$))[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*(:\d{1,5})?$/i;
+const USER_RE = /^[^\s:/\\@\0]{1,100}$/;
+const EMAIL_RE = /^[^\s@\0]+@[^\s@\0]+$/;
+let gitAccounts = [];
+let cloneDir = null;   // last folder cloned into
+const REPO_PAGES = 3;
+
+// The credential protocol is key=value lines: refuse anything that could add a line.
+function gitCred(op, fields) {
+  return new Promise((done) => {
+    const child = execFile('git', ['-c', 'credential.interactive=never', 'credential', op], {
+      timeout: 20000, killSignal: 'SIGKILL',
+      env: { ...GIT_ENV, GIT_ASKPASS: '', SSH_ASKPASS: '', GCM_INTERACTIVE: 'never' },
+    }, (e, so, se) => done({ ok: !e, out: so || '', err: (se || '').trim() }));
+    child.stdin.on('error', () => {});
+    child.stdin.end(Object.entries(fields).filter(([, v]) => v).map(([k, v]) => `${k}=${v}`).join('\n') + '\n\n');
+  });
+}
+
+async function tokenOf(a) {
+  const r = await gitCred('fill', { protocol: 'https', host: a.host, username: a.username });
+  const pw = r.ok && r.out.match(/^password=(.*)$/m)?.[1];
+  if (!pw) throw new Error(`The token for ${a.username} on ${a.host} is no longer in git's credential helper — remove the account and add it again.`);
+  return pw;
+}
+
+// Last credential.helper git would use (an empty value resets the list), or null.
+async function credHelper() {
+  const r = await git(homedir(), ['config', '--get-all', 'credential.helper']);
+  const list = r.out.replace(/\n$/, '').split('\n');
+  return list.slice(list.lastIndexOf('') + 1).pop() || null;
+}
+const SUGGEST_HELPER = { darwin: 'osxkeychain', win32: 'manager' }[process.platform] || null;
+
+async function cloudApi(a, token, path) {
+  const headers = { accept: 'application/json', 'user-agent': 'GitMenorah' };
+  if (a.service === 'github') headers.authorization = `Bearer ${token}`;
+  else if (a.service === 'gitlab') headers['private-token'] = token;
+  else headers.authorization = `Basic ${Buffer.from(`${a.email}:${token}`).toString('base64')}`;
+  let res;
+  // No redirects: a custom header such as PRIVATE-TOKEN would follow them to another host.
+  try { res = await fetch(SERVICES[a.service].api(a.host) + path, { headers, redirect: 'error', signal: AbortSignal.timeout(15000) }); }
+  catch (e) { throw new Error(`Could not reach ${a.host}: ${e.cause?.message || e.message}`); }
+  if (res.status === 401 || res.status === 403) throw new Error(`${a.host} rejected the token (HTTP ${res.status}). Check that it is valid and has the scopes listed.`);
+  if (!res.ok) throw new Error(`${a.host} answered HTTP ${res.status}.`);
+  return res.json();
+}
+
+const accountView = (a) => ({ ...a, label: SERVICES[a.service].label });
+const accountsView = async () => ({ accounts: gitAccounts.map(accountView), helper: await credHelper(), suggestHelper: SUGGEST_HELPER, cloneDir });
+
+async function accountAdd(b) {
+  const service = Object.hasOwn(SERVICES, b.service) ? b.service : null;
+  if (!service) throw new Error('Pick GitHub, GitLab, Bitbucket or another host.');
+  const host = service === 'bitbucket' ? 'bitbucket.org'
+    : String(b.host || SERVICES[service].host).trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/+$/, '');
+  if (!HOST_RE.test(host)) throw new Error('Enter a host name, e.g. github.com or gitlab.example.com.');
+  const token = String(b.token || '').trim();
+  if (!token) throw new Error('Paste a personal access token.');
+  if (/[\s\0]/.test(token)) throw new Error('The token has spaces or line breaks in it — copy it again.');
+  const a = { id: 'a' + Date.now().toString(36), service, host, username: '', email: '', name: '', protocol: b.protocol === 'ssh' ? 'ssh' : 'https', addedAt: Date.now() };
+  if (service === 'bitbucket') {
+    a.email = String(b.email || '').trim();
+    if (!EMAIL_RE.test(a.email)) throw new Error('Enter the email of your Atlassian account — Bitbucket checks API tokens against it.');
+  }
+  if (service === 'other') {
+    a.username = String(b.username || '').trim();
+    if (!USER_RE.test(a.username)) throw new Error('Enter the username for this host.');
+  } else {
+    const u = await cloudApi(a, token, '/user');
+    a.username = String(u.login || u.username || '');
+    a.name = String(u.name || u.display_name || '').slice(0, 100);
+    if (!USER_RE.test(a.username)) throw new Error(`${host} did not return a usable username.`);
+  }
+  const helper = await credHelper();
+  if (!helper) throw new Error('Git has no credential helper, so it cannot remember the token. Turn one on first.');
+  const r = await gitCred('approve', { protocol: 'https', host, username: a.username, password: token });
+  if (!r.ok) throw new Error(`git credential approve failed: ${r.err || 'no output'}`);
+  if (await tokenOf(a).catch(() => null) !== token) throw new Error(`The credential helper "${helper}" did not keep the token, so git could not use it.`);
+  // Signing in again as the same user replaces the token but keeps the account's id.
+  const old = gitAccounts.find((x) => x.host === host && x.username === a.username);
+  if (old) a.id = old.id;
+  gitAccounts = [...gitAccounts.filter((x) => x !== old), a];
+  await saveConf();
+  return { ...(await accountsView()), added: accountView(a) };
+}
+
+const toRepo = (name, https, ssh, priv, desc, at) => ({ name, https, ssh, private: !!priv, description: String(desc || '').slice(0, 200), updatedAt: Date.parse(at) || 0 });
+async function accountRepos(a) {
+  const token = await tokenOf(a);
+  const out = [];
+  for (let page = 1; page <= REPO_PAGES; page++) {
+    let got;
+    if (a.service === 'github') {
+      got = (await cloudApi(a, token, `/user/repos?per_page=100&sort=pushed&page=${page}`))
+        .map((x) => toRepo(x.full_name, x.clone_url, x.ssh_url, x.private, x.description, x.pushed_at));
+    } else if (a.service === 'gitlab') {
+      got = (await cloudApi(a, token, `/projects?membership=true&simple=true&order_by=last_activity_at&per_page=100&page=${page}`))
+        .map((x) => toRepo(x.path_with_namespace, x.http_url_to_repo, x.ssh_url_to_repo, x.visibility !== 'public', x.description, x.last_activity_at));
+    } else {
+      const j = await cloudApi(a, token, `/repositories?role=member&sort=-updated_on&pagelen=100&page=${page}`);
+      const link = (x, k) => (x.links?.clone || []).find((c) => c.name === k)?.href || '';
+      got = (j.values || []).map((x) => toRepo(x.full_name, link(x, 'https'), link(x, 'ssh'), x.is_private, x.description, x.updated_on));
+    }
+    out.push(...got);
+    if (got.length < 100) break;
+  }
+  return { repos: out };
+}
+
+async function gitAccountOp(b) {
+  if (b.op === 'add') return accountAdd(b);
+  if (b.op === 'use-helper') {
+    if (!SUGGEST_HELPER) throw new Error('Set credential.helper yourself — see git help credential.');
+    if (!(await credHelper())) {
+      const r = await git(homedir(), ['config', '--global', 'credential.helper', SUGGEST_HELPER]);
+      if (!r.ok) throw new Error(r.err.trim() || 'git config failed.');
+    }
+    return accountsView();
+  }
+  const a = gitAccounts.find((x) => x.id === b.id);
+  if (!a) throw new Error('No such account.');
+  if (b.op === 'repos') {
+    if (a.service === 'other') throw new Error(`GitMenorah cannot list repositories on ${a.host} — paste the URL.`);
+    return accountRepos(a);
+  }
+  if (b.op === 'remove') {
+    await gitCred('reject', { protocol: 'https', host: a.host, username: a.username });
+    gitAccounts = gitAccounts.filter((x) => x !== a);
+    await saveConf();
+    return accountsView();
+  }
+  throw new Error('Unknown account action.');
+}
+
+// ─── Clone ───
+// Runs in the background: POST starts it, GET ?job= reports progress. The clone joins the
+// project group whose folder holds it, otherwise the list of other repositories.
+const CLONE_URL_RE = /^((https?|ssh|git):\/\/[^\s/]+\/\S+|[\w.-]+@[\w.-]+:(?!\/\/)\S+)$/;
+const cloneJobs = new Map();   // id → { id, dir, cmd, done, ok, progress, error }
+
+// https://host/a/b.git signed in as `user` → https://user@host/a/b.git, so the credential
+// helper picks that account's token when several accounts share a host.
+function withUser(url, a) {
+  const m = url.match(/^https:\/\/([^/@]+)(\/.*)$/);
+  return m && m[1].toLowerCase() === a.host ? `https://${encodeURIComponent(a.username)}@${m[1]}${m[2]}` : url;
+}
+const repoNameOf = (url) => (String(url).replace(/[?#].*$/, '').replace(/\/+$/, '').split(/[/:]/).pop() || '').replace(/\.git$/i, '');
+
+async function gitClone(b) {
+  let url = String(b.url || '').trim();
+  if (!CLONE_URL_RE.test(url)) throw new Error('Enter a repository URL — https://…, ssh://… or git@host:owner/repo.git.');
+  if (b.account) {
+    const a = gitAccounts.find((x) => x.id === b.account);
+    if (!a) throw new Error('That account is no longer signed in.');
+    url = withUser(url, a);
+  }
+  const parent = normPath(b.parent);
+  if ((await kindOf(parent)) !== 'dir') throw new Error(`Folder not found: ${parent}`);
+  const name = String(b.name || '').trim() || repoNameOf(url);
+  if (!/^(?![.-])[^/\\:\0]{1,120}$/.test(name)) throw new Error('Enter a folder name — no slashes, not starting with . or -.');
+  const dir = join(parent, name);
+  const k = await kindOf(dir);
+  if (k !== 'missing' && (k !== 'dir' || (await readdir(dir)).length)) throw new Error(`${dir} already exists and is not empty.`);
+  if ([...cloneJobs.values()].some((j) => !j.done && j.dir === dir)) throw new Error(`Already cloning into ${dir}.`);
+  cloneDir = parent;
+  await saveConf();
+
+  const args = ['clone', '--progress', '--', url, dir];
+  const job = { id: 'k' + Date.now().toString(36), dir, cmd: hideCred(cmdText(args)), done: false, ok: false, progress: 'Starting…', error: '' };
+  cloneJobs.set(job.id, job);
+  let log = '';
+  const child = spawn('git', ['-c', 'core.quotepath=false', ...args], { cwd: parent, env: GIT_ENV, windowsHide: true });
+  const kill = setTimeout(() => child.kill('SIGKILL'), 60 * 60 * 1000);
+  child.stderr.on('data', (d) => {
+    log = (log + d).slice(-8000);
+    job.progress = hideCred(log.split(/[\r\n]+/).filter(Boolean).pop() || job.progress);
+  });
+  child.stdout.resume();
+  let settled = false;
+  const finish = async (ok, why) => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(kill);
+    if (ok) {
+      const g = gitGroups.find((x) => dir.startsWith(x.path + sep));
+      if (g) { if (!g.repos.includes(dir)) g.repos.push(dir); }
+      else if (!gitExtra.includes(dir)) gitExtra.push(dir);
+      await saveConf();
+      gitReposP = null;
+    } else {
+      let err = hideCred(why || log.split(/[\r\n]+/).filter((l) => l && !/^(Cloning into|remote: (Counting|Compressing|Enumerating|Total)|Receiving|Resolving)/.test(l)).join('\n').trim()) || 'git clone failed.';
+      if (/Host key verification failed/.test(err)) err += `\nConnect once from a terminal (ssh -T ${url.match(/@([\w.-]+)/)?.[1] || 'host'}) to trust the host, then try again.`;
+      else if (/terminal prompts disabled|Authentication failed|could not read Username/i.test(err)) err += '\nSign in to this host under Settings → Accounts, or use an SSH URL.';
+      job.error = err;
+    }
+    gitHistory = [{ t: Date.now(), repo: name, wt: '', title: 'Clone', ok, steps: [{ cmd: job.cmd, code: ok ? 0 : 1, out: ok ? '' : job.error }] }, ...gitHistory].slice(0, GIT_HISTORY_MAX);
+    Object.assign(job, { ok, done: true, progress: ok ? 'Done' : job.progress });
+    setTimeout(() => cloneJobs.delete(job.id), 10 * 60 * 1000);
+  };
+  child.on('error', (e) => finish(false, e.message));
+  child.on('close', (code) => finish(code === 0));
+  return job;
+}
+
 // ─── Nhóm project ───
 // PO thêm một thư mục: server quét mọi repo bên trong, PO đặt tên nhóm. Danh sách repo chụp
 // lúc thêm (PO bấm Rescan khi clone thêm) — không quét lại mỗi lần tải danh sách. Chỉ đọc
@@ -1485,6 +1706,14 @@ export async function gitRoute(req, res, url) {
   if (post && p === '/api/git/extra') return out(await gitAddExtra(await readBody(req)));
   if (post && p === '/api/git/groups/scan') return out(await gitGroupScan(await readBody(req)));
   if (post && p === '/api/git/groups') return out(await gitGroupOp(await readBody(req)));
+  if (get && p === '/api/git/accounts') return out(await accountsView());
+  if (post && p === '/api/git/accounts') return out(await gitAccountOp(await readBody(req)));
+  if (get && p === '/api/git/clone') {
+    const j = cloneJobs.get(qp.job);
+    if (!j) throw new Error('No such clone.');
+    return out(j);
+  }
+  if (post && p === '/api/git/clone') return out(await gitClone(await readBody(req)));
   if (post && p === '/api/git/pick') {
     const prompt = (await readBody(req)).repo ? 'Choose a git repository' : 'Choose a folder that contains git repositories';
     return out(await pickFolder({ prompt }));

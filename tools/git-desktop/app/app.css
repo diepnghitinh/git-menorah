@@ -50,16 +50,16 @@ button.primary:hover { background: var(--accent-hover); }
 button.ghost { background: transparent; border-color: transparent; }
 button.ghost:hover { background: var(--hover); }
 button:disabled { opacity: .5; cursor: default; }
-input[type=text], textarea, select { font: inherit; font-size: 13px; color: var(--text); background: var(--panel);
+input[type=text], input[type=password], textarea, select { font: inherit; font-size: 13px; color: var(--text); background: var(--panel);
   border: 1px solid var(--border-strong); border-radius: 8px; padding: 6px 10px; outline: none; }
-input[type=text]:focus, textarea:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+input[type=text]:focus, input[type=password]:focus, textarea:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .i { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex: none; }
 .muted { color: var(--muted); }
 .mono { font-family: var(--mono); font-size: 12.5px; }
 [hidden] { display: none !important; }
 
 /* ─── Thanh canvas nổi (góc trên trái whiteboard) ───────────────────────── */
-.canvas-bar { top: 10px; left: 12px; bottom: auto; transform: none; max-width: calc(100% - 24px); padding: 3px 4px 3px 12px; gap: 4px; }
+.canvas-bar { top: 10px; left: 12px; bottom: auto; transform: none; max-width: calc(100% - 24px); padding: 3px 4px; gap: 4px; }
 /* Dải trên cùng của canvas là header trong suốt: kéo ở đó dời cửa sổ, không pan canvas. Vùng kéo nuốt
    mọi chuột, nên phần node trôi lên dải này bị che, không bấm được — như thanh tiêu đề (PO chốt 21/10).
    Nằm trên #world (z-index node gói trong #world), dưới các thanh nổi (10). Cao = thanh nổi (10 + 36) + 10. */
@@ -68,8 +68,6 @@ input[type=text]:focus, textarea:focus, select:focus { border-color: var(--accen
 body:has(.menu:not([hidden]), #modal:not([hidden])) #canvas-head { -webkit-app-region: no-drag; }
 .canvas-bar { -webkit-app-region: drag; user-select: none; }
 .canvas-bar button, .canvas-bar input, .canvas-bar .ctab { -webkit-app-region: no-drag; }
-.cb-project { font-weight: 600; white-space: nowrap; max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
-.cb-sep { color: var(--faint); margin: 0 2px; }
 .chev { width: 14px; height: 14px; color: var(--faint); }
 /* Tab canvas trong thanh nổi */
 .canvas-tabs { display: flex; align-items: center; gap: 2px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
@@ -130,6 +128,7 @@ main { position: absolute; inset: 0 0 0 calc(var(--rail-w) * var(--rail-z)); }
 #canvas-menu { position: fixed; min-width: 300px; }
 .menu-hd { padding: 8px 10px 4px; font-size: 10.5px; font-weight: 700; color: var(--faint); text-transform: uppercase; letter-spacing: .05em; }
 .menu-list { max-height: min(360px, 50vh); overflow-y: auto; }
+.menu-filter { width: calc(100% - 8px); margin: 2px 4px 6px; height: 28px; padding: 4px 8px; }
 .menu-item > .i { width: 15px; height: 15px; flex: none; color: var(--muted); }
 /* Menu chuột phải trên canvas: toạ độ đặt bằng JS theo điểm bấm. */
 #node-menu { position: fixed; min-width: 220px; }
@@ -353,6 +352,54 @@ main { position: absolute; inset: 0 0 0 calc(var(--rail-w) * var(--rail-z)); }
   border-radius: 9px; font-size: 13px; z-index: 120; box-shadow: 0 10px 30px rgba(0,0,0,.25); max-width: 560px; }
 .dialog label.field span { display: block; margin-bottom: 4px; }
 .dialog .limit-now { margin-top: 16px; padding: 8px 12px; border-radius: 8px; background: var(--sunken); color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+/* Settings: tabs Accounts · Terminal limits */
+.dialog.settings { width: 540px; }
+.set-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border); margin: 10px 0 14px; }
+.set-tabs button { height: 32px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--muted); margin-bottom: -1px; }
+.set-tabs button.on { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
+.set-body { min-height: 220px; }
+.dialog .notice { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 10px 12px; margin-bottom: 12px; border-radius: 8px;
+  background: var(--danger-soft); font-size: 12.5px; }
+.dialog .notice b { width: 100%; }
+.dialog .notice span { flex: 1; color: var(--muted); }
+.acct-list { border: 1px solid var(--border); border-radius: 10px; margin-bottom: 12px; }
+.acct { display: flex; align-items: center; gap: 10px; padding: 8px 10px; }
+.acct + .acct { border-top: 1px solid var(--line); }
+.acct .grow { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.acct .sub { font-size: 12px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.acct button.danger { color: var(--danger); border-color: var(--danger); }
+.acct-mark { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; flex: none; font-size: 11px; font-weight: 700;
+  color: #fff; background: var(--muted); }
+.acct-mark.github { background: #24292f; }
+.acct-mark.gitlab { background: #e24329; }
+.acct-mark.bitbucket { background: #0052cc; }
+.acct-empty { padding: 18px; margin-bottom: 12px; text-align: center; color: var(--muted); border: 1px dashed var(--border-strong); border-radius: 10px; font-size: 13px; }
+.dialog a { color: var(--accent); font-size: 12px; text-decoration: none; }
+.dialog a:hover { text-decoration: underline; }
+
+/* Clone repository */
+.dialog.clone { width: 600px; }
+.dialog .row { display: flex; gap: 6px; }
+.dialog .row input { flex: 1; min-width: 0; }
+.dialog .row2 { display: flex; gap: 10px; }
+.dialog .row2 > .field { flex: 1; min-width: 0; }
+.dialog .row2 > .field.grow { flex: 2; }
+.dialog div.field > span { display: block; font-size: 12.5px; font-weight: 600; margin: 12px 0 4px; }
+.browse { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.browse-head { display: flex; gap: 6px; padding: 6px; border-bottom: 1px solid var(--line); background: var(--sunken); }
+.browse-head select { width: 45%; }
+.browse-head input { flex: 1; }
+.repo-list { max-height: 180px; overflow-y: auto; padding: 4px; }
+.repo-list > .muted, .repo-list > .err { padding: 8px; font-size: 12.5px; margin: 0; }
+.repo-list button.repo { display: flex; width: 100%; height: 28px; border: 0; border-radius: 6px; background: transparent; text-align: left; }
+.repo-list button.repo:hover { background: var(--hover); }
+.repo-list button.repo.on { background: var(--accent-soft); }
+.repo-list .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.repo-list .tag { font-size: 10.5px; color: var(--muted); background: var(--chip); border-radius: 4px; padding: 0 6px; }
+.dialog .cmd { margin-top: 14px; padding: 8px 12px; border-radius: 8px; background: var(--sunken); color: var(--muted); word-break: break-all; }
+.dialog .cmd::before { content: '$ '; color: var(--faint); }
+.dialog pre.cmd-out { max-height: 260px; overflow: auto; margin: 8px 0 0; padding: 10px 12px; border-radius: 8px; background: var(--sunken);
+  font: 12px/1.5 var(--mono); white-space: pre-wrap; word-break: break-word; }
 .empty-card.inline { margin: 48px auto; text-align: center; }
 .agent-row .status-label { display: inline-flex; align-items: center; gap: 6px; }
 
