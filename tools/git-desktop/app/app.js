@@ -34,7 +34,6 @@ const app = {
       if (!e.target.closest('#canvas-menu')) $('#canvas-menu').hidden = true;
       if (!e.target.closest('#node-menu')) $('#node-menu').hidden = true;
     });
-    $('#add-project-btn').addEventListener('click', () => this.addProject());
     $('#zoom-in').addEventListener('click', () => this.canvas.zoomBy(1.2));
     $('#zoom-out').addEventListener('click', () => this.canvas.zoomBy(1 / 1.2));
     $('#zoom-reset').addEventListener('click', () => { const r = $('#stage').getBoundingClientRect(); this.canvas.zoomAt(r.left + r.width / 2, r.top + r.height / 2, 1); });
@@ -211,7 +210,6 @@ const app = {
     $('#project-btn').title = `${this.project.name}\n${this.project.cwd}\nClick to switch project`;
     $('#project-initial').textContent = initials(this.project.name);
     document.title = `${this.project.name} · GitMenorah`;
-    $('#no-project').hidden = true;
     await this.canvas.load(this.project, r.canvas, this.project.canvasId);
     if (!r.canvas.nodes?.length) this.canvas.applyViewport();
     this.renderCanvasTabs();
@@ -222,7 +220,6 @@ const app = {
     this.project = null;
     $('#project-initial').textContent = '+';
     $('#project-btn').title = 'Open a project folder';
-    $('#no-project').hidden = false;
     $('#canvas-empty').hidden = true;
     $('#rail-running').hidden = true;
     this.renderCanvasTabs();
