@@ -529,12 +529,14 @@ async function setup({ app, gitOrigin, api, settings }) {
   });
   handle('ws:shots', () => recentShots());
   handle('ws:reveal', (e, p) => { if (p && fs.existsSync(p)) shell.showItemInFolder(p); });
-  handle('ws:thumb', async (e, p) => {
+  // max: bề ngang tối đa (ô Ảnh vừa chụp 640, node ảnh trên canvas lớn hơn để zoom vẫn nét).
+  handle('ws:thumb', async (e, p, max) => {
     if (!/\.(png|jpe?g|gif|webp)$/i.test(p || '')) return null;
     const img = nativeImage.createFromPath(p);
     if (img.isEmpty()) return null;
     const { width } = img.getSize();
-    return (width > 640 ? img.resize({ width: 640 }) : img).toDataURL();
+    const cap = Math.min(2400, Math.max(64, Number(max) || 640));
+    return (width > cap ? img.resize({ width: cap }) : img).toDataURL();
   });
 
   // Agents

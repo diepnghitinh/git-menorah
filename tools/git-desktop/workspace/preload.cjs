@@ -41,7 +41,7 @@ contextBridge.exposeInMainWorld('menorah', {
   saveFile: (bytes, name) => ipcRenderer.invoke('ws:file-save', bytes, name),
   clipboardImage: () => ipcRenderer.invoke('ws:clipboard-image'),
   shots: () => ipcRenderer.invoke('ws:shots'),
-  thumb: (p) => ipcRenderer.invoke('ws:thumb', p),
+  thumb: (p, max) => ipcRenderer.invoke('ws:thumb', p, max),
   reveal: (p) => ipcRenderer.invoke('ws:reveal', p),
 
   agents: () => ipcRenderer.invoke('ws:agents'),

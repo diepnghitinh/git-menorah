@@ -166,7 +166,7 @@ const GIT_ENV = {
 // cho các lệnh này — `stash -u` hay hook commit (lint-staged) dùng pathspec nội bộ như `:/`,
 // gặp chế độ literal là hỏng ngầm (stash xong tệp mới vẫn nằm nguyên).
 const GIT_ENV_LITERAL = { ...GIT_ENV, GIT_LITERAL_PATHSPECS: '1' };
-const PATH_CMDS = new Set(['add', 'restore', 'diff', 'show']);
+const PATH_CMDS = new Set(['add', 'restore', 'clean', 'diff', 'show']);
 // Nhận diện theo tên tệp — chỉ là lưới thô, không thay được .gitignore. Mẫu `.env.example`
 // (và sample/template/dist) là tệp mẫu để commit, không tính là bí mật.
 const SECRET_RE = /(^|\/)(\.env(rc|\.[^/]*)?|\.npmrc|\.pgpass|\.netrc|\.htpasswd|id_(rsa|dsa|ecdsa|ed25519)(\.pub)?|tokens?\.json|\.docker\/config\.json|[^/]*(secret|credential)[^/]*)$|\.(pem|key|p8|p12|pfx|ppk|crt|cer|der|jks|keystore|kdbx|tfvars|tfvars\.json|tfstate|tfstate\.backup)$/i;
@@ -284,6 +284,13 @@ async function gitTarget(body) {
     dir = w.path;
   }
   return { r, dir, wt: body.wt || '', wts };
+}
+
+// Phiên bản git (đọc một lần) — vài cờ chỉ có từ một bản nhất định, như `pull --no-rebase --autostash` (2.27).
+let gitVer = null;
+async function gitAtLeast(major, minor) {
+  if (!gitVer) { const m = /(\d+)\.(\d+)/.exec((await git(homedir(), ['--version'], 5000)).out); gitVer = m ? [+m[1], +m[2]] : [0, 0]; }
+  return gitVer[0] > major || (gitVer[0] === major && gitVer[1] >= minor);
 }
 
 // `untracked`: 'normal' gom thư mục mới thành một dòng (đủ cho danh sách repo); 'all' liệt
@@ -692,7 +699,7 @@ async function gitPlan(body) {
   const t = await gitTarget(body);
   const { r, dir } = t;
   const op = body.op;
-  const s = await gitStatus(dir, ['stage', 'unstage', 'ship'].includes(op) ? 'all' : 'normal', Infinity);
+  const s = await gitStatus(dir, ['stage', 'unstage', 'discard', 'ship'].includes(op) ? 'all' : 'normal', Infinity);
   if (s.error) throw new Error(s.error);
   // `expect` = nhánh + commit HEAD lúc lập kế hoạch. Chạy thật mà khác thì dừng.
   const plan = { title: '', steps: [], warn: [], block: null, after: null, expect: `${s.branch || '(detached)'}@${s.oid || ''}`, branch: s.branch };
@@ -700,7 +707,8 @@ async function gitPlan(body) {
   const write = op !== 'fetch';
   if (write && r.readOnly) return block(r.readOnly);
   // Đang merge/rebase dở vẫn stage được: đó là cách đánh dấu đã sửa xong xung đột.
-  if (write && !['abort', 'continue', 'stage', 'unstage'].includes(op) && s.op) {
+  // Bỏ thay đổi cũng được: tệp xung đột bị loại khỏi discard, tệp khác không dính tới merge.
+  if (write && !['abort', 'continue', 'stage', 'unstage', 'discard'].includes(op) && s.op) {
     return block(`A ${s.op} is in progress — Continue or Abort it first.`);
   }
   const needClean = (what) => s.tracked ? block(`${s.tracked} tracked file(s) have uncommitted changes — commit or stash before you ${what}. "merge --abort" cannot restore changes that were there before.`) : null;
@@ -727,20 +735,42 @@ async function gitPlan(body) {
     if (upShort === 'develop' && PROTECTED_RE.test(s.branch)) return block(`${s.branch} tracks ${s.upstream} — pulling would merge develop into ${s.branch}, which gitflow forbids. Fix the upstream with git branch -u.`);
     if (mode !== 'ff' && r.gitflow && PROTECTED_RE.test(s.branch)) return block(`${s.branch} only accepts changes through a pull request — fast-forward pull only.`);
     plan.title = `Pull ${s.upstream}`;
+    const mergeOk = !(r.gitflow && PROTECTED_RE.test(s.branch));
+    // Rebase chỉ khi mọi commit sẽ bị viết lại còn nằm riêng ở máy này. Trả lý do chặn, hay null.
+    const rebaseBlock = async () => {
+      // Nhánh dùng chung hay chứa merge commit của nhánh feature — rebase làm phẳng mất chúng.
+      if (SHARED_RE.test(s.branch)) return `${s.branch} is a shared branch — pull with merge or fast-forward, never rebase.`;
+      if (!mergeOk) return `${s.branch} only accepts changes through a pull request — fast-forward pull only.`;
+      const p = await pushedInRange(dir, `${s.upstream}..HEAD`);
+      if (p.pushed == null) return 'Could not count commits already on the remote (git failed or timed out) — not rebasing without being sure.';
+      if (p.pushed) return `${p.pushed} commit(s) that would be rewritten are already on the remote — rebasing would need a force push, which this project forbids. Pull with merge instead.`;
+      return null;
+    };
+    // Thay đổi chưa commit: --autostash cất đi trước khi pull và trả lại sau (merge/rebase
+    // --abort hay Continue cũng trả lại). Pull merge cần git 2.27+; git cũ hơn thì vẫn bắt commit/stash.
+    const stash = async (what) => {
+      if (!s.tracked) return [];
+      if (what === 'pull' && !(await gitAtLeast(2, 27))) return needClean(what) ? null : [];
+      plan.warn.push(`${s.tracked} file(s) with uncommitted changes are stashed before the pull and put back after (--autostash). If they clash with the pulled changes, git leaves conflict markers and keeps them in the stash list.`);
+      return ['--autostash'];
+    };
     if (mode === 'ff') {
       plan.steps.push({ args: ['pull', '--ff-only', '--no-recurse-submodules'], timeout: 120000 });
-      if (s.ahead && s.behind) plan.warn.push(`The branch has diverged (↑${s.ahead} ↓${s.behind}) — fast-forward will fail; pull with merge instead.`);
+      if (s.ahead && s.behind) {
+        // Đã rẽ nhánh: fast-forward chắc chắn hỏng — hộp xác nhận đưa luôn cách pull chạy được.
+        if (!(await rebaseBlock())) plan.alt = { mode: 'rebase', label: 'Pull with rebase', why: `Your ${s.ahead} local commit(s) are not on the remote yet — rebase puts them on top of ${s.upstream}, with no merge commit.` };
+        else if (mergeOk) plan.alt = { mode: 'merge', label: 'Pull with merge', why: `Merge ${s.upstream} into ${s.branch} with a merge commit.` };
+        plan.warn.push(`The branch has diverged (↑${s.ahead} ↓${s.behind}) — fast-forward will fail${plan.alt ? '' : '; commit history has to be reconciled outside this page'}.`);
+      }
     } else if (mode === 'merge') {
-      if (needClean('pull')) return plan;
-      plan.steps.push({ args: ['pull', '--no-rebase', '--no-edit', '--no-recurse-submodules'], timeout: 120000 });
+      const a = await stash('pull');
+      if (!a) return plan;
+      plan.steps.push({ args: ['pull', '--no-rebase', '--no-edit', ...a, '--no-recurse-submodules'], timeout: 120000 });
     } else {
-      // Nhánh dùng chung hay chứa merge commit của nhánh feature — rebase làm phẳng mất chúng.
-      if (SHARED_RE.test(s.branch)) return block(`${s.branch} is a shared branch — pull with merge or fast-forward, never rebase.`);
-      if (needClean('pull --rebase')) return plan;
-      const p = await pushedInRange(dir, `${s.upstream}..HEAD`);
-      if (p.pushed == null) return block('Could not count commits already on the remote (git failed or timed out) — not rebasing without being sure.');
-      if (p.pushed) return block(`${p.pushed} commit(s) that would be rewritten are already on the remote — rebasing would need a force push, which this project forbids. Pull with merge instead.`);
-      plan.steps.push({ args: ['pull', '--rebase', '--no-recurse-submodules'], timeout: 120000 });
+      const why = await rebaseBlock();
+      if (why) return block(why);
+      const a = await stash('pull --rebase');
+      plan.steps.push({ args: ['pull', '--rebase', ...a, '--no-recurse-submodules'], timeout: 120000 });
     }
     return plan;
   }
@@ -909,6 +939,40 @@ async function gitPlan(body) {
       plan.title = all ? 'Unstage all files' : todo.length === 1 ? `Unstage ${todo[0].path}` : `Unstage ${todo.length} files`;
       plan.steps.push({ args: ['restore', '--staged', '--', ...todo.flatMap((f) => (f.orig ? [f.path, f.orig] : [f.path]))] });
     }
+    return plan;
+  }
+
+  // Bỏ thay đổi chưa stage (khung Unstaged): tệp đã theo dõi lấy lại bản trong index
+  // (`restore --worktree`, phần đã stage giữ nguyên), tệp chưa theo dõi bị xoá (`clean -f`).
+  // Mất là mất hẳn nên luôn qua hộp xác nhận. Tệp bí mật chưa theo dõi không bao giờ xoá từ
+  // trang; tệp xung đột thì sửa hoặc Abort chứ không discard.
+  if (op === 'discard') {
+    const all = body.all === true;
+    const want = Array.isArray(body.paths) ? body.paths : [];
+    if (!all && (!want.length || want.some((p) => typeof p !== 'string'))) return block('No files selected.');
+    const byPath = new Map(s.files.map((f) => [f.path, f]));
+    const pick = all ? s.files : want.map((p) => byPath.get(p));
+    if (pick.some((f) => !f)) return block('Some files no longer have changes — click Refresh.');
+    const conflict = pick.find((f) => f.xy === 'UU');
+    if (conflict && pick.length === 1) return block(`${conflict.path} is conflicted — fix it and Mark resolved, or Abort the ${s.op || 'merge'}.`);
+    let todo = pick.filter((f) => f.xy === '??' || (f.xy !== 'UU' && f.xy[1] !== '.'));
+    const secret = todo.filter((f) => f.xy === '??' && isSecret(f.path));
+    if (secret.length && !all) return block(`${secret[0].path} is an untracked secret file — this page will not delete it.`);
+    if (secret.length) {
+      todo = todo.filter((f) => !secret.includes(f));
+      plan.warn.push(`Keeping ${secret.length} untracked secret file(s): ${secret.slice(0, 3).map((f) => f.path).join(', ')}${secret.length > 3 ? '…' : ''}.`);
+    }
+    if (!todo.length) return block('Nothing to discard.');
+    const tracked = todo.filter((f) => f.xy !== '??'), untracked = todo.filter((f) => f.xy === '??');
+    plan.title = all ? 'Discard all unstaged changes' : todo.length === 1 ? `Discard changes in ${todo[0].path}` : `Discard changes in ${todo.length} files`;
+    if (tracked.length) plan.steps.push({ args: ['restore', '--worktree', '--', ...tracked.map((f) => f.path)] });
+    if (untracked.length) plan.steps.push({ args: ['clean', '-f', '--', ...untracked.map((f) => f.path)] });
+    plan.warn.push('Discarded changes cannot be recovered — git keeps no copy of them.');
+    if (untracked.length) plan.warn.push(`${untracked.length} untracked file(s) will be deleted from disk.`);
+    if (tracked.some((f) => f.xy[0] !== '.')) plan.warn.push('Staged changes in these files are kept — only the unstaged part is discarded.');
+    if (conflict) plan.warn.push('Conflicted files are left as they are.');
+    // Danh sách tệp đổi sau khi xem hộp xác nhận → không bỏ thứ PO chưa thấy.
+    plan.expect += '#' + createHash('sha1').update(todo.map((f) => f.xy + f.path).join('\n')).digest('hex').slice(0, 12);
     return plan;
   }
 

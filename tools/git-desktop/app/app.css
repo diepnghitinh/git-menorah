@@ -69,6 +69,17 @@ body:has(.menu:not([hidden]), #modal:not([hidden])) #canvas-head { -webkit-app-r
 .canvas-bar { -webkit-app-region: drag; user-select: none; }
 .canvas-bar button, .canvas-bar input, .canvas-bar .ctab { -webkit-app-region: no-drag; }
 .chev { width: 14px; height: 14px; color: var(--faint); }
+/* Đầu breadcrumb: project đang mở (bấm để đổi), rồi "/" trước các tab của project đó */
+.canvas-crumb { display: flex; align-items: center; gap: 4px; flex: none; min-width: 0; }
+.canvas-crumb:empty { display: none; }
+.cproj { display: inline-flex; align-items: center; gap: 6px; height: 28px !important; padding: 0 8px 0 10px; border-radius: 7px; font-weight: 600;
+  color: var(--text); max-width: 260px; }
+.cproj .i { width: 15px; height: 15px; flex: none; color: var(--muted); }
+.cproj .chev { width: 13px; height: 13px; color: var(--faint); }
+.cproj-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cproj.empty { color: var(--accent); font-weight: 500; }
+.cproj.empty .i { color: var(--accent); }
+.crumb-sep { color: var(--faint); padding: 0 2px; user-select: none; }
 /* Tab canvas trong thanh nổi */
 .canvas-tabs { display: flex; align-items: center; gap: 2px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
 .canvas-tabs::-webkit-scrollbar { display: none; }
@@ -94,10 +105,6 @@ body:has(.menu:not([hidden]), #modal:not([hidden])) #canvas-head { -webkit-app-r
 #rail { zoom: var(--rail-z); }
 .rail-top { height: 44px; flex: none; }
 body.win .rail-top { height: 6px; }
-.rail-project { width: 40px; height: 40px; padding: 0; border: 0; border-radius: 10px; background: #3b4250; color: #fff; font-weight: 700; font-size: 14px;
-  letter-spacing: .02em; display: grid; place-items: center; }
-.rail-project:hover { background: #4a5263; }
-.rail-sep { width: 28px; height: 1px; background: rgba(255,255,255,.12); margin: 6px 0 2px; }
 .rail-btn { position: relative; width: var(--rail-w); height: 52px; border: 0; border-radius: 0; background: transparent; color: var(--rail-fg);
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 0; }
 .rail-lb { font-size: 10.5px; font-weight: 600; line-height: 1; }
@@ -123,8 +130,9 @@ body.win .rail-top { height: 6px; }
 .menu-item .x:hover { color: var(--danger); background: var(--danger-soft); }
 
 main { position: absolute; inset: 0 0 0 calc(var(--rail-w) * var(--rail-z)); }
-#project-menu { position: fixed; top: calc(52px * var(--rail-z)); left: calc(var(--rail-w) * var(--rail-z) + 8px); }
-/* Menu + ở dải tab canvas: toạ độ đặt bằng JS theo nút. Danh sách repo dài thì cuộn trong khung. */
+/* Menu project (nút đầu breadcrumb) và menu + ở dải tab canvas: toạ độ đặt bằng JS theo nút.
+   Danh sách repo dài thì cuộn trong khung. */
+#project-menu { position: fixed; }
 #canvas-menu { position: fixed; min-width: 300px; }
 .menu-hd { padding: 8px 10px 4px; font-size: 10.5px; font-weight: 700; color: var(--faint); text-transform: uppercase; letter-spacing: .05em; }
 .menu-list { max-height: min(360px, 50vh); overflow-y: auto; }
@@ -218,8 +226,22 @@ main { position: absolute; inset: 0 0 0 calc(var(--rail-w) * var(--rail-z)); }
   .node.note .node-head { border-bottom-color: #4d4422; }
   .node.note textarea { color: #efe3b0; }
 }
-.node.image .node-body { background: var(--sunken); display: grid; place-items: center; }
-.node.image img { max-width: 100%; max-height: 100%; object-fit: contain; display: block; }
+/* Ảnh kiểu Figma: không khung, tên + nút phía trên, 4 ô vuông ở góc khi chọn. */
+.node.image { background: transparent; border-color: transparent; border-radius: 0; box-shadow: none; }
+.node.image:hover { border-color: var(--accent); }
+.node.image.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.node.image.handing { opacity: .55; }
+.node.image .node-head { position: absolute; bottom: 100%; left: -1px; width: max(calc(100% + 2px), 200px); height: 28px; padding: 0 0 2px;
+  border: 0; background: transparent; opacity: 0; transition: opacity .12s; }
+.node.image:hover .node-head, .node.image.active .node-head { opacity: 1; }
+.node.image .node-title { font-size: 12px; font-weight: 500; color: var(--muted); }
+.node.image.active .node-title { color: var(--accent); }
+.node.image .node-body { border-radius: 0; background: transparent; cursor: default; }
+.node.image .node-body > p { margin: 0; padding: 10px; background: var(--sunken); height: 100%; }
+.node.image img { width: 100%; height: 100%; object-fit: contain; display: block; user-select: none; -webkit-user-drag: none; pointer-events: none; }
+.node.image.active .resize.se::after { content: none; }
+.node.image.active :is(.resize.nw, .resize.ne, .resize.sw, .resize.se)::after { content: ''; position: absolute; inset: 3px; background: #fff;
+  border: 1px solid var(--accent); border-radius: 1px; }
 
 .toolbar { position: absolute; display: flex; align-items: center; gap: 4px; padding: 4px; background: var(--panel); border: 1px solid var(--border);
   border-radius: 12px; box-shadow: 0 6px 24px rgba(var(--shadow-c), .12); z-index: 10; }

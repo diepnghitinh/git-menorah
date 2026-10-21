@@ -354,6 +354,8 @@
   .gk-fold .gk-ic{width:13px;height:13px}
   .gk-file .act{visibility:hidden;font-size:11px;padding:0 8px;line-height:19px;flex:none}
   .gk-file:hover .act,.gk-file.sel .act{visibility:visible}
+  .gk-file .act.drop{margin-right:4px}
+  .gk-file .act.drop:hover:not(:disabled){color:var(--danger);border-color:var(--danger-border);background:var(--danger-soft)}
   .gk-commit{border-top:1px solid var(--border);padding:12px 14px 14px;display:flex;flex-direction:column;gap:8px;background:var(--subtle);flex:none}
   .gk-commit .row{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)}
   .gk-commit .row .spacer{flex:1}
@@ -466,6 +468,26 @@
   .ex-code .ln{position:sticky;left:0;background:var(--panel);color:var(--faint);text-align:right;padding:0 14px 0 12px;user-select:none;min-width:52px}
   .ex-code .src{padding-right:40px;color:var(--code-text)}
   .ex-img{padding:24px;display:grid;place-items:center}
+  .ex-md{max-width:900px;margin:0 auto;padding:20px 32px 48px;font-size:14px;line-height:1.65;color:var(--text);overflow-wrap:break-word}
+  .ex-md>:first-child{margin-top:0}
+  .ex-md h1,.ex-md h2,.ex-md h3,.ex-md h4,.ex-md h5,.ex-md h6{margin:26px 0 12px;line-height:1.3;font-weight:600}
+  .ex-md h1{font-size:1.9em;padding-bottom:.3em;border-bottom:1px solid var(--line)}
+  .ex-md h2{font-size:1.45em;padding-bottom:.3em;border-bottom:1px solid var(--line)}
+  .ex-md h3{font-size:1.2em} .ex-md h4{font-size:1em} .ex-md h5{font-size:.9em} .ex-md h6{font-size:.85em;color:var(--muted)}
+  .ex-md p,.ex-md ul,.ex-md ol,.ex-md blockquote,.ex-md pre,.ex-md .tbl{margin:0 0 14px}
+  .ex-md ul,.ex-md ol{padding-left:2em} .ex-md li+li{margin-top:3px} .ex-md li>ul,.ex-md li>ol{margin:3px 0 0}
+  .ex-md li.task{list-style:none} .ex-md li.task input{margin:0 6px 0 -1.4em;vertical-align:-1px}
+  .ex-md a{color:var(--accent);text-decoration:none} .ex-md a:hover{text-decoration:underline}
+  .ex-md code{font-family:var(--mono);font-size:.86em;background:var(--chip);padding:.15em .4em;border-radius:5px}
+  .ex-md pre{background:var(--sunken);border:1px solid var(--line);border-radius:8px;padding:12px 14px;overflow:auto;line-height:1.5}
+  .ex-md pre code{background:none;padding:0;font-size:12.5px;color:var(--code-text)}
+  .ex-md blockquote{padding:0 14px;border-left:3px solid var(--border-strong);color:var(--muted)}
+  .ex-md hr{border:none;border-top:1px solid var(--border);margin:24px 0}
+  .ex-md img{max-width:100%;border-radius:4px;vertical-align:middle}
+  .ex-md .tbl{overflow:auto}
+  .ex-md table{border-collapse:collapse;font-size:13px}
+  .ex-md th,.ex-md td{border:1px solid var(--border);padding:6px 12px}
+  .ex-md th{background:var(--subtle);font-weight:600} .ex-md tbody tr:nth-child(2n) td{background:var(--subtle)}
   .ex-img img{max-width:100%;background:repeating-conic-gradient(var(--chip) 0 25%,transparent 0 50%) 0 0/16px 16px;border:1px solid var(--line)}
   .hl-k{color:var(--hl-k)} .hl-s{color:var(--hl-s)} .hl-c{color:var(--hl-c);font-style:italic} .hl-n{color:var(--hl-n)} .hl-t{color:var(--hl-t)}
   .ex-empty{flex:1;display:grid;place-items:center;color:var(--faint);font-size:13px;text-align:center;padding:30px}
@@ -577,6 +599,9 @@
   .dlg-cmds{background:var(--term);color:#8ab4ff;font-family:var(--mono);font-size:12px;border-radius:8px;padding:10px 12px;line-height:1.6;word-break:break-all}
   .dlg-warn{margin:10px 0 0;padding-left:18px;font-size:12.5px;color:var(--warn)}
   .dlg-warn li{margin-bottom:3px}
+  .dlg-alt{display:flex;align-items:center;gap:10px;margin-top:10px;padding:8px 10px;border-radius:8px;background:var(--accent-soft);color:var(--info-text);font-size:12.5px}
+  .dlg-alt span{flex:1}
+  .dlg-alt button{flex:none}
   .dlg-block{background:var(--danger-soft);color:var(--danger);border-radius:8px;padding:10px 12px;font-size:13px}
   .dlg-foot{display:flex;justify-content:flex-end;gap:8px;padding:14px 22px 18px}
 
@@ -1751,12 +1776,14 @@ function gkFiles(files, ctx) {
   const isSel = (p) => o && o.path === p && (ctx.sha ? o.sha === ctx.sha : !o.sha && !!o.staged === !!ctx.staged);
   const act = ctx.sha ? '' : ctx.staged ? 'unstage' : 'stage';
   const btn = (label) => (act ? `<button class="act" data-act="${act}" ${ctx.lock || ''}>${label}</button>` : '');
+  // Unstaged: Discard đứng trước Stage. Tệp xung đột thì sửa hoặc Abort, không discard.
+  const drop = (f) => (act === 'stage' && (!f || f.st !== 'U') ? `<button class="act drop" data-act="discard" ${ctx.lock || ''} title="Throw away these changes">Discard</button>` : '');
   const ST_TITLE = { M: 'modified', A: 'added', D: 'deleted', R: 'renamed', C: 'copied', U: 'conflicted', T: 'type changed' };
   const fileRow = (f, depth, name) => `<div class="gk-file ${isSel(f.path) ? 'sel' : ''}" data-path="${esc(f.path)}" data-staged="${ctx.staged ? 1 : 0}" data-st="${esc(f.st)}"
     ${ctx.sha ? `data-sha="${ctx.sha}"` : ''} style="padding-left:${14 + depth * 14}px" title="${esc(f.from ? `${f.from} → ${f.path}` : f.path)}">
     <span class="st ${f.st}" title="${ST_TITLE[f.st] || ''}">${f.st}</span><span class="p">${name}</span>${f.secret
       ? '<span class="chip warn" title="Untracked secret file — add it to .gitignore. This page will not stage it.">secret</span>'
-      : btn(f.st === 'U' ? 'Mark resolved' : ctx.staged ? 'Unstage' : 'Stage')}</div>`;
+      : drop(f) + btn(f.st === 'U' ? 'Mark resolved' : ctx.staged ? 'Unstage' : 'Stage')}</div>`;
   if (gitUi.view !== 'tree') {
     return files.map((f) => {
       const i = f.path.lastIndexOf('/');
@@ -1786,7 +1813,7 @@ function gkFiles(files, ctx) {
       if (!hidden) {
         const id = 'd' + gkDirFiles.size;
         gkDirFiles.set(id, all(c));
-        out.push(`<div class="gk-file dir" style="padding-left:${14 + depth * 14}px" data-dir="${id}" data-key="${esc(key)}" title="${esc(base + name)}">${ic('down', 'gk-tw' + (shut ? ' shut' : ''))}${ic('folder')}<span class="p">${esc(name)}${shut ? ` <span class="n">${count(c)}</span>` : ''}</span>${btn(ctx.staged ? 'Unstage' : 'Stage')}</div>`);
+        out.push(`<div class="gk-file dir" style="padding-left:${14 + depth * 14}px" data-dir="${id}" data-key="${esc(key)}" title="${esc(base + name)}">${ic('down', 'gk-tw' + (shut ? ' shut' : ''))}${ic('folder')}<span class="p">${esc(name)}${shut ? ` <span class="n">${count(c)}</span>` : ''}</span>${drop()}${btn(ctx.staged ? 'Unstage' : 'Stage')}</div>`);
       }
       walk(c, depth + 1, base + name + '/', hidden || shut);
     }
@@ -1811,7 +1838,7 @@ function gkWipHtml() {
   return `<div class="gk-rhead"><div class="ln1"><span class="t"><b>${s.filesTotal}</b> changed file${s.filesTotal === 1 ? '' : 's'} on <code>${esc(s.branch || 'detached HEAD')}</code></span>${gkViewSeg()}</div>
       ${s.filesTotal > s.files.length ? `<div class="sub" style="margin-top:4px">Showing the first ${s.files.length} files only.</div>` : ''}</div>
     ${gkBanners()}
-    <div class="gk-sect" style="flex:${gkSplit()} 1 0"><div class="gk-sect-h">Unstaged <span class="n">${un.length}</span><span class="spacer"></span>${un.length ? `<button data-all="stage" ${lock}>Stage all</button>` : ''}</div>
+    <div class="gk-sect" style="flex:${gkSplit()} 1 0"><div class="gk-sect-h">Unstaged <span class="n">${un.length}</span><span class="spacer"></span>${un.some((f) => f.st !== 'U' && !f.secret) ? `<button class="danger" data-all="discard" ${lock} title="Throw away every unstaged change">Discard all</button>` : ''}${un.length ? `<button data-all="stage" ${lock}>Stage all</button>` : ''}</div>
       <div class="gk-files">${gkFiles(un, { staged: false, empty: 'No unstaged files.', lock })}</div></div>
     <div class="gk-hrz" data-rz="split" title="Drag to resize · double-click to split evenly"></div>
     <div class="gk-sect" style="flex:${1 - gkSplit()} 1 0"><div class="gk-sect-h">Staged <span class="n">${st.length}</span><span class="spacer"></span>${st.length ? `<button data-all="unstage" ${lock}>Unstage all</button>` : ''}</div>
@@ -2012,7 +2039,8 @@ function gkRenderDiff() {
   const f = !o.sha && gitD?.status.files.find((x) => x.path === o.path);
   const lock = gitBusy || gitD?.readOnly ? 'disabled' : '';
   const act = !f ? '' : o.staged ? `<button data-dact="unstage" ${lock}>Unstage</button>`
-    : `<button class="primary" data-dact="stage" ${lock}>${f.xy === 'UU' ? 'Mark resolved' : 'Stage file'}</button>`;
+    : (f.xy === 'UU' || (f.xy === '??' && f.secret) ? '' : `<button class="danger" data-dact="discard" ${lock} title="Throw away the unstaged changes in this file">Discard</button>`)
+      + `<button class="primary" data-dact="stage" ${lock}>${f.xy === 'UU' ? 'Mark resolved' : 'Stage file'}</button>`;
   let body;
   if (o.err) body = `<div class="msg">${esc(o.err)}</div>`;
   else if (!r) body = '<div class="msg">Loading…</div>';
@@ -2274,6 +2302,146 @@ function exHl(text, path) {
   return out + esc(text.slice(i));
 }
 
+// Xem trước Markdown (README, docs) ở chế độ Files: tiêu đề, đoạn, danh sách lồng nhau (có
+// ô task), trích dẫn, bảng, khối code tô màu, liên kết, ảnh. HTML thô trong tệp hiện nguyên
+// văn — mọi chữ đều qua esc() trước, liên kết chỉ nhận http(s)/mailto/#/đường dẫn tương đối.
+const EX_MD = /\.(md|markdown|mdx)$/i;
+function exMdHtml(src, path) {
+  const base = path.includes('/') ? path.slice(0, path.lastIndexOf('/') + 1) : '';
+  // Đường dẫn trong repo (tương đối theo tệp, hay /từ gốc repo) → đường dẫn chuẩn, hoặc null nếu ra ngoài repo.
+  const inRepo = (u) => {
+    const parts = [];
+    for (const x of (u.startsWith('/') ? u.slice(1) : base + u).split('/')) {
+      if (x === '..') { if (!parts.length) return null; parts.pop(); } else if (x && x !== '.') parts.push(x);
+    }
+    return parts.join('/');
+  };
+  const unesc = (u) => u.replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+  const slug = (t) => t.toLowerCase().replace(/<[^>]+>/g, '').replace(/&[a-z#0-9]+;/g, '').replace(/[^\p{L}\p{N}\s_-]/gu, '').trim().replace(/\s/g, '-');
+  const link = (href, inner) => {
+    const u = unesc(href);
+    if (u.startsWith('#')) return `<a href="#" data-mdanchor="${esc(u.slice(1).toLowerCase())}">${inner}</a>`;
+    if (/^(https?:|mailto:)/i.test(u)) return `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${inner}</a>`;
+    if (/^[a-z][a-z\d+.-]*:/i.test(u) || u.startsWith('//')) return inner;   // javascript:, data:, file:…
+    const p = inRepo(u.replace(/[?#].*$/, ''));
+    return p ? `<a href="#" data-mdopen="${esc(p)}" title="${esc(p)}">${inner}</a>` : inner;
+  };
+  const img = (alt, href) => {
+    const u = unesc(href);
+    let s = null;
+    if (/^https?:/i.test(u)) s = u;
+    else if (!/^[a-z][a-z\d+.-]*:/i.test(u) && !u.startsWith('//')) { const p = inRepo(u.replace(/[?#].*$/, '')); if (p) s = exViewUrl(p); }
+    return s ? `<img src="${esc(s)}" alt="${alt}" loading="lazy">` : alt;
+  };
+  // Chữ trong một dòng. Code dòng và liên kết giữ chỗ trước để đậm/nghiêng không chạm vào chúng.
+  const inline = (raw) => {
+    const keep = [], put = (h) => `\u0000${keep.push(h) - 1}\u0000`;
+    let t = raw.replace(/(`+)([^`]|[^`][\s\S]*?[^`])\1(?!`)/g, (_, b, c) => put(`<code>${esc(c.trim() || c)}</code>`));
+    t = esc(t)
+      .replace(/!\[([^\]]*)\]\(\s*((?:[^()\s]|\([^()\s]*\))+)(?:\s+&quot;[^]*?&quot;)?\s*\)/g, (_, a, u) => put(img(a, u)))
+      .replace(/\[([^\]]+)\]\(\s*((?:[^()\s]|\([^()\s]*\))+)(?:\s+&quot;[^]*?&quot;)?\s*\)/g, (_, x, u) => put(link(u, x)))
+      .replace(/&lt;((?:https?:\/\/|mailto:)[^\s&]+(?:&amp;[^\s&]+)*)&gt;/g, (_, u) => put(link(u, u)))
+      .replace(/(^|[\s(])(https?:\/\/[^\s<]+[^\s<.,:;!?)'"])/g, (_, a, u) => a + put(link(u, u)));
+    t = t.replace(/\*\*(?=\S)([\s\S]*?\S)\*\*/g, '<b>$1</b>').replace(/(^|[^\w])__(?=\S)([\s\S]*?\S)__(?!\w)/g, '$1<b>$2</b>')
+      .replace(/(^|[^*\w])\*(?=[^\s*])([^*]*?[^\s*])\*(?!\*)/g, '$1<i>$2</i>').replace(/(^|[^\w])_(?=\S)([^_]*?\S)_(?!\w)/g, '$1<i>$2</i>')
+      .replace(/~~(?=\S)([\s\S]*?\S)~~/g, '<s>$1</s>')
+      .replace(/( {2,}|\\)\n/g, '<br>');
+    // Ảnh nằm trong liên kết ([![badge](…)](…)) là chỗ giữ lồng nhau — trả lại đến hết.
+    while (/\u0000\d+\u0000/.test(t)) t = t.replace(/\u0000(\d+)\u0000/g, (_, n) => keep[n]);
+    return t;
+  };
+  const LIST = /^( *)([-*+]|\d{1,9}[.)])( +|$)/;
+  const isBreak = (l, nx) => /^ {0,3}(#{1,6}( |$)|>|```|~~~)/.test(l) || /^ {0,3}([-*_])( *\1){2,} *$/.test(l) || LIST.test(l) || /^\s*\|.*\|\s*$/.test(l) && /^\s*\|?[\s:|-]+\|?\s*$/.test(nx || '');
+  const cells = (r) => r.trim().replace(/^\||\|$/g, '').split(/(?<!\\)\|/).map((c) => c.trim().replace(/\\\|/g, '|'));
+  const blocks = (lines) => {
+    const out = [];
+    for (let i = 0; i < lines.length;) {
+      const l = lines[i];
+      if (!l.trim()) { i++; continue; }
+      const fence = l.match(/^ {0,3}(```+|~~~+)\s*([\w+#.-]*)/);
+      if (fence) {
+        const code = [];
+        for (i++; i < lines.length && !lines[i].trimStart().startsWith(fence[1]); i++) code.push(lines[i]);
+        i++;
+        out.push(`<pre><code>${exHl(code.join('\n'), 'x.' + (fence[2] || 'txt').toLowerCase())}</code></pre>`);
+        continue;
+      }
+      const hd = l.match(/^ {0,3}(#{1,6})(?: +(.*?))?(?: +#+)? *$/);
+      if (hd) { const x = inline(hd[2] || ''); out.push(`<h${hd[1].length} data-anchor="${esc(slug(x))}">${x}</h${hd[1].length}>`); i++; continue; }
+      if (/^ {0,3}([-*_])( *\1){2,} *$/.test(l)) { out.push('<hr>'); i++; continue; }
+      if (/^ {0,3}>/.test(l)) {
+        const q = [];
+        while (i < lines.length && lines[i].trim() && (/^ {0,3}>/.test(lines[i]) || !isBreak(lines[i]))) q.push(lines[i++].replace(/^ {0,3}> ?/, ''));
+        out.push(`<blockquote>${blocks(q)}</blockquote>`);
+        continue;
+      }
+      if (/^\s*\|.*\|\s*$/.test(l) && /^\s*\|?[\s:|-]+\|?\s*$/.test(lines[i + 1] || '') && lines[i + 1].includes('-')) {
+        const al = cells(lines[i + 1]).map((c) => (c.endsWith(':') ? (c.startsWith(':') ? 'center' : 'right') : c.startsWith(':') ? 'left' : ''));
+        const row = (r, tg) => `<tr>${cells(r).map((c, k) => `<${tg}${al[k] ? ` style="text-align:${al[k]}"` : ''}>${inline(c)}</${tg}>`).join('')}</tr>`;
+        let t = `<thead>${row(l, 'th')}</thead><tbody>`;
+        for (i += 2; i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i]); i++) t += row(lines[i], 'td');
+        out.push(`<div class="tbl"><table>${t}</tbody></table></div>`);
+        continue;
+      }
+      const li = l.match(LIST);
+      if (li) {
+        // Một danh sách = các mục cùng lề; dòng thụt sâu hơn (kể cả sau dòng trống) thuộc mục trước.
+        const ind = li[1].length, ordered = /\d/.test(li[2]), items = [];
+        let loose = false;
+        while (i < lines.length) {
+          const m = lines[i].match(LIST);
+          if (!m || m[1].length !== ind || /\d/.test(m[2]) !== ordered) break;
+          const w = ind + m[2].length + Math.min(m[3].length || 1, 4), body = [lines[i].slice(w)];
+          for (i++; i < lines.length; i++) {
+            const x = lines[i];
+            if (!x.trim()) {
+              const nx = lines.slice(i + 1).find((y) => y.trim());
+              if (!nx || nx.length - nx.trimStart().length < w && !(nx.match(LIST)?.[1].length === ind)) break;
+              if (nx.match(LIST)?.[1].length === ind) { loose = true; break; }
+              body.push(''); continue;
+            }
+            const xi = x.length - x.trimStart().length;
+            if (xi >= w) body.push(x.slice(w));
+            else if (xi > ind && LIST.test(x)) body.push(x.slice(Math.min(xi, w)));
+            else if (!isBreak(x) && body[body.length - 1] !== '') body.push(x.trim());
+            else break;
+          }
+          while (i < lines.length && !lines[i].trim()) i++;
+          items.push({ body, n: parseInt(m[2], 10) });
+        }
+        const html = items.map(({ body }) => {
+          let h = blocks(body), task = false;
+          if (!loose) h = h.replace(/^<p>([\s\S]*?)<\/p>/, '$1');
+          h = h.replace(/^(<p>)?\[([ xX])\] /, (_, p, c) => { task = true; return `${p || ''}<input type="checkbox" disabled${c !== ' ' ? ' checked' : ''}> `; });
+          return `<li${task ? ' class="task"' : ''}>${h}</li>`;
+        }).join('');
+        out.push(ordered ? `<ol${items[0].n !== 1 ? ` start="${items[0].n}"` : ''}>${html}</ol>` : `<ul>${html}</ul>`);
+        continue;
+      }
+      if (/^( {4}|\t)/.test(l)) {
+        const code = [];
+        while (i < lines.length && (/^( {4}|\t)/.test(lines[i]) || !lines[i].trim())) code.push(lines[i++].replace(/^( {4}|\t)/, ''));
+        while (code.length && !code[code.length - 1].trim()) code.pop();
+        out.push(`<pre><code>${esc(code.join('\n'))}</code></pre>`);
+        continue;
+      }
+      const p = [l.replace(/^\s+/, '')];
+      for (i++; i < lines.length && lines[i].trim() && !isBreak(lines[i], lines[i + 1]); i++) {
+        // Tiêu đề kiểu gạch dưới (Setext): dòng === hay --- ngay dưới đoạn.
+        if (/^ {0,3}(=+|-+) *$/.test(lines[i])) break;
+        p.push(lines[i].replace(/^\s+/, ''));
+      }
+      const st = lines[i]?.match(/^ {0,3}(=+|-+) *$/);
+      if (st) { const x = inline(p.join('\n')), n = st[1][0] === '=' ? 1 : 2; out.push(`<h${n} data-anchor="${esc(slug(x))}">${x}</h${n}>`); i++; continue; }
+      out.push(`<p>${inline(p.join('\n'))}</p>`);
+    }
+    return out.join('');
+  };
+  // Bỏ front matter YAML (---…---) ở đầu tệp, như GitHub.
+  const text = src.replace(/\r\n?/g, '\n').replace(/^\uFEFF/, '').replace(/^---\n[\s\S]*?\n---\n/, '').replace(/\t/g, '    ');
+  return blocks(text.split('\n'));
+}
+
 const exKb = (n) => n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(n < 10240 ? 1 : 0)} KB` : `${(n / 1048576).toFixed(1)} MB`;
 const EX_IMG = /\.(png|jpe?g|gif|webp|svg|ico)$/i;
 const exViewUrl = (p, rev = 'work') => `/git-view/${encodeURIComponent(gitSel.repo)}/${encodeURIComponent(gitSel.wt || '~')}/${rev}/${p.split('/').map(encodeURIComponent).join('/')}`;
@@ -2299,6 +2467,10 @@ function exRenderMain(keepTop) {
   if (t.kind === 'file') {
     if (r?.size != null) meta = exKb(r.size);
     if (/\.html?$/i.test(t.path) && r && !r.secret && !r.missing) acts = `<button data-ex="web" title="Open the page in a new window">Open as web page</button>` + acts;
+    if (EX_MD.test(t.path) && r && !r.secret && !r.missing && !r.binary) {
+      const pv = gitUi.mdView !== 'code';
+      acts = `<div class="seg sm"><button data-exmd="preview" class="${pv ? 'active' : ''}" title="Render the Markdown">Preview</button><button data-exmd="code" class="${pv ? '' : 'active'}" title="Show the source">Code</button></div>` + acts;
+    }
   } else if (t.kind === 'diff') meta = `${t.sha.slice(0, 7)} · ${t.author || ''}, ${t.when ? gkWhen(t.when) : ''}`;
   else meta = t.staged ? 'staged changes' : 'uncommitted changes';
   if (t.kind === 'diff' || t.kind === 'work') acts = `<button data-ex="openfile" title="Open the current version of the file">Open file</button>` + acts;
@@ -2308,7 +2480,11 @@ function exRenderMain(keepTop) {
   else if (diff) body = r.text.trim() ? gkDiffHtml(r.text) + (r.cut ? '<div class="gk-diff-cut">Diff too large — showing the first 400 KB.</div>' : '') : '<div class="msg">No content changes (possibly a file mode change only).</div>';
   else if (r.missing) body = `<div class="msg">${exMark(EX.xy[t.path]) === 'D' ? 'This file was deleted in the working tree.' : 'This path is not a file on disk (a submodule, or it was moved).'}</div>`;
   else if (r.binary) body = EX_IMG.test(t.path) ? `<div class="ex-img"><img src="${esc(exViewUrl(t.path))}" alt="${esc(exName(t.path))}"></div>` : `<div class="msg">Binary file · ${exKb(r.size)} — not shown.</div>`;
-  else {
+  else if (EX_MD.test(t.path) && gitUi.mdView !== 'code') {
+    // Dựng lại chỉ khi nội dung đổi: exRenderMain chạy cả khi chỉ đổi tab hay trạng thái tệp.
+    if (t.mdFor !== r) { t.md = exMdHtml(r.text, t.path); t.mdFor = r; }
+    body = `<div class="ex-md">${t.md}</div>` + (r.cut ? `<div class="gk-diff-cut">File too large — showing the first 2 MB of ${exKb(r.size)}.</div>` : '');
+  } else {
     const n = r.text.split('\n').length - (r.text.endsWith('\n') ? 1 : 0);
     body = `<div class="ex-code"><pre class="ln">${Array.from({ length: Math.max(n, 1) }, (_, i) => i + 1).join('\n')}</pre><pre class="src">${exHl(r.text, t.path)}</pre></div>`
       + (r.cut ? `<div class="gk-diff-cut">File too large — showing the first 2 MB of ${exKb(r.size)}.</div>` : '');
@@ -2365,6 +2541,18 @@ function exRenderLog() {
 for (const [k, i] of [['term', 'term'], ['reload', 'reload'], ['fold', 'fold']]) document.querySelector(`.ex-side [data-ex=${k}]`).innerHTML = ic(i);
 function exTerminal(cwd) { mnPost({ type: 'menorah:new-agent', agent: 'shell', cwd }); }
 $('gkEx').addEventListener('click', (e) => {
+  const mv = e.target.closest('[data-exmd]');
+  if (mv) { gitUi.mdView = mv.dataset.exmd; gitSaveUi(); return exRenderMain(); }
+  // Liên kết trong bản xem trước Markdown: #mục cuộn tới tiêu đề, đường dẫn trong repo mở ở tab.
+  const ml = e.target.closest('[data-mdopen],[data-mdanchor]');
+  if (ml) {
+    e.preventDefault();
+    const a = ml.dataset.mdanchor;
+    if (a != null) return [...$('exView').querySelectorAll('[data-anchor]')].find((x) => x.dataset.anchor === a)?.scrollIntoView({ block: 'start' });
+    const p = ml.dataset.mdopen;
+    if (EX.files && !EX.files.includes(p)) return toast(`${p} is not a file in this repository`);
+    return exOpen({ id: 'f:' + p, kind: 'file', path: p });
+  }
   const b = e.target.closest('[data-ex]');
   if (b) {
     const t = exActive(), k = b.dataset.ex;
@@ -2466,16 +2654,17 @@ async function gitConfirm(plan, op, body) {
     ${where(p) ? '' : `<div class="sub" style="margin-bottom:8px">Runs in <code>${esc(gitD.dir)}</code></div>`}
     <div class="dlg-cmds">${gkStepLines(p.steps, (x) => '$ ' + esc(x.cmd))}</div>
     ${p.warn.length ? `<ul class="dlg-warn">${p.warn.map((w) => `<li>${esc(w)}</li>`).join('')}</ul>` : ''}
+    ${p.alt ? `<div class="dlg-alt"><span>${esc(p.alt.why)}</span><button type="button" id="dlgAlt">${esc(p.alt.label)}</button></div>` : ''}
     ${p.ack ? `<label class="gd-check"><input type="checkbox" id="dlgAck" /><span>${esc(p.ack)}</span></label>` : ''}`);
   const OK = { abort: 'Abort', commit: 'Commit', checkout: 'Checkout', revert: 'Revert', stash: 'Stash', pop: 'Pop', push: 'Push', pull: 'Pull', merge: 'Merge', rebase: 'Rebase',
-    ship: plan.title.startsWith('Commit') ? 'Commit & merge' : 'Merge', 'remove-wt': 'Remove' };
+    ship: plan.title.startsWith('Commit') ? 'Commit & merge' : 'Merge', 'remove-wt': 'Remove', discard: 'Discard' };
   let cur = plan;
   const ff = op === 'merge' ? `<label class="gd-check"><input type="checkbox" id="dlgFF" ${body.ff ? 'checked' : ''} />
     <span>Allow fast-forward — default is <code>--no-ff</code>, which keeps a merge commit as gitflow expects</span></label>` : '';
   const ok = await gitDialog({
     title: plan.block ? 'Cannot run' : plan.title,
     html: `<div id="dlgPlan">${view(plan)}</div>${ff}`,
-    ok: OK[op] || 'Run', okClass: op === 'abort' || op === 'remove-wt' ? 'danger' : 'primary',
+    ok: OK[op] || 'Run', okClass: op === 'abort' || op === 'remove-wt' || op === 'discard' ? 'danger' : 'primary',
     cancel: plan.block ? 'Close' : 'Cancel', hideOk: !!plan.block,
     mount: (root, okB) => {
       let busy = false;
@@ -2483,6 +2672,21 @@ async function gitConfirm(plan, op, body) {
       const sync = () => { okB.disabled = busy || (!!cur.ack && !root.querySelector('#dlgAck')?.checked); };
       root.addEventListener('change', (e) => { if (e.target.id === 'dlgAck') sync(); });
       sync();
+      // Pull đã rẽ nhánh: nút gợi ý lập lại kế hoạch với kiểu pull chạy được — chỉ cho lần này,
+      // không đổi kiểu pull đã chọn ở thanh công cụ.
+      root.addEventListener('click', async (e) => {
+        if (e.target.id !== 'dlgAlt' || busy || !cur.alt) return;
+        const mode = cur.alt.mode;
+        busy = true; e.target.disabled = true; sync();
+        let next = null;
+        try { next = await api('/api/git/run', { ...body, mode, dryRun: true }); } catch (err) { toast(err.message); }
+        busy = false;
+        if (next) { cur = next; body.mode = mode; }
+        $('dlgPlan').innerHTML = view(cur);
+        $('dlgTitle').textContent = cur.block ? 'Cannot run' : cur.title;
+        okB.hidden = !!cur.block;
+        sync();
+      });
       const box = root.querySelector('#dlgFF');
       if (!box) return;
       // Đổi lựa chọn → hỏi lại server. Chỉ nhận lựa chọn mới khi hộp đã hiện đúng lệnh mới;

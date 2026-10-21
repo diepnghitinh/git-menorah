@@ -44,7 +44,8 @@ GitMenorah treats worktrees as the default way to work, not an advanced trick.
 ### The rest of the Git client
 
 - **Commit graph** with branch and tag lanes, commit details and changed files as a path list or tree.
-- **Files view** with a file tree, per-file history and a built-in terminal.
+- **Files view** with a file tree, per-file history and a built-in terminal. Markdown files open with a **Preview | Code** switch.
+- **Stage, unstage or discard** any file or folder in the working tree. Discard always shows the exact `git restore` / `git clean` commands first and never deletes untracked secret files such as `.env.local`.
 - **Branches, remotes and stashes** in one sidebar, with fetch, pull, push, stash and pop.
 - **Review before run.** Every action opens a dialog with the exact `git` commands and any warnings. **Command history** in the bottom tray records what ran and what it printed.
 - **Project groups.** Add every repository of a multi-repo product once, then fetch all of them in one click.
@@ -90,8 +91,9 @@ Your shell and the agent itself are never throttled or killed, only the processe
 ## Canvas
 
 - **Infinite, zoomable workspace** with a minimap. `⌘0` fits everything on screen.
-- **Tabs per project.** Each tab is its own canvas. The **+** opens a tab on a folder, on a repository you already have, or on a fresh clone.
+- **Tabs per project.** The top bar reads like a breadcrumb: **project ▾ / tab 1 · tab 2**. Click the project to switch to another one or open a new folder. Each tab is its own canvas, and the **+** opens a tab on a folder, on a repository you already have, or on a fresh clone.
 - **Notes** sit next to the agents they describe and can be shared with them through wires.
+- **Images, Figma style.** Paste (`⌘V`) or drop an image onto the canvas, drag it around, resize it from any corner with its aspect ratio kept (`⇧` for free), and drop it onto a terminal to hand it to the agent.
 - **Layouts persist.** Close the app and your canvas, wires and sessions are where you left them.
 - **Multiple windows.** `⌘N` opens another window, for example Git on one screen and the canvas on another.
 

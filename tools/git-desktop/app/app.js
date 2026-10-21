@@ -28,7 +28,6 @@ const app = {
 
     $$('.rail-btn').forEach((t) => t.addEventListener('click', () => this.setView(t.dataset.view)));
     $$('[data-new]').forEach((b) => b.addEventListener('click', () => this.newNode(b.dataset.new)));
-    $('#project-btn').addEventListener('click', (e) => { e.stopPropagation(); this.toggleProjectMenu(); });
     document.addEventListener('click', (e) => {
       if (!e.target.closest('#project-menu')) $('#project-menu').hidden = true;
       if (!e.target.closest('#canvas-menu')) $('#canvas-menu').hidden = true;
@@ -92,9 +91,19 @@ const app = {
   },
 
   // ─── Canvas trong project ───────────────────────────────────────────────
+  // Breadcrumb của canvas: [project ▾] / tab 1 · tab 2 … Chưa có project thì chỉ còn nút chọn thư mục.
   renderCanvasTabs() {
-    const bar = $('#canvas-tabs');
-    if (!this.project) { bar.replaceChildren(); return; }
+    const bar = $('#canvas-tabs'), crumb = $('#canvas-crumb');
+    const pick = (e) => { e.stopPropagation(); this.projects.length ? this.toggleProjectMenu(e.currentTarget) : this.addProject(); };
+    if (!this.project) {
+      crumb.replaceChildren(h('button.cproj.empty', { title: 'Open a project folder or repository', onclick: pick }, icon('folder'), h('span', 'Select Folder Project')));
+      bar.replaceChildren();
+      return;
+    }
+    crumb.replaceChildren(
+      h('button.cproj', { title: `${this.project.name}\n${this.project.cwd}\nClick to switch project`, onclick: pick },
+        icon('folder'), h('span.cproj-name', this.project.name), icon('chev', 'chev')),
+      h('span.crumb-sep', '/'));
     const many = this.project.canvases.length > 1;
     bar.replaceChildren(...this.project.canvases.map((c) => {
       const tab = h(`div.ctab${c.id === this.project.canvasId ? '.on' : ''}`, { role: 'tab', dataset: { id: c.id }, title: `${c.cwd || this.project.cwd}\nDouble-click to rename`,
@@ -127,6 +136,7 @@ const app = {
   // already listed in the Git tab. Agents opened in that tab run in its folder.
   async toggleCanvasMenu(btn) {
     const m = $('#canvas-menu');
+    $('#project-menu').hidden = true;
     if (!m.hidden) { m.hidden = true; return; }
     const repos = await window.menorah.repos();
     // Inside the project folder: show the part after it; outside: shorten $HOME to ~.
@@ -207,8 +217,6 @@ const app = {
     const r = await window.menorah.openProject(id);
     if (r.elsewhere) { toast('This project is open in another window.'); return false; }
     this.setProject(r.project);
-    $('#project-btn').title = `${this.project.name}\n${this.project.cwd}\nClick to switch project`;
-    $('#project-initial').textContent = initials(this.project.name);
     document.title = `${this.project.name} · GitMenorah`;
     await this.canvas.load(this.project, r.canvas, this.project.canvasId);
     if (!r.canvas.nodes?.length) this.canvas.applyViewport();
@@ -218,8 +226,6 @@ const app = {
 
   showNoProject() {
     this.project = null;
-    $('#project-initial').textContent = '+';
-    $('#project-btn').title = 'Open a project folder';
     $('#canvas-empty').hidden = true;
     $('#rail-running').hidden = true;
     this.renderCanvasTabs();
@@ -246,8 +252,9 @@ const app = {
     }
   },
 
-  toggleProjectMenu() {
+  toggleProjectMenu(btn) {
     const m = $('#project-menu');
+    $('#canvas-menu').hidden = true;
     if (!m.hidden) { m.hidden = true; return; }
     m.replaceChildren(
       ...this.projects.map((p) => h(`button.menu-item${p.id === this.project?.id ? '.on' : ''}`, { onclick: async () => { m.hidden = true; await this.openProject(p.id); } },
@@ -255,7 +262,10 @@ const app = {
         h('span.x', { title: 'Remove from list', onclick: (e) => { e.stopPropagation(); m.hidden = true; this.removeProject(p); } }, icon('close')))),
       this.projects.length ? h('div.menu-sep') : '',
       h('button.menu-item', { onclick: () => { m.hidden = true; this.addProject(); } }, icon('plus'), h('span.grow', 'Open Folder…')));
+    const r = btn.getBoundingClientRect();
     m.hidden = false;
+    m.style.top = `${r.bottom + 6}px`;
+    m.style.left = `${Math.max(8, Math.min(r.left, innerWidth - m.offsetWidth - 8))}px`;
   },
 
   // Chuột phải trên nền canvas: tạo agent/terminal/ghi chú, góc trên trái node nằm ngay điểm bấm.
@@ -704,11 +714,5 @@ const app = {
     document.addEventListener('pointerdown', (e) => { if (!pop.hidden && !e.target.closest('#shots, #shots-btn')) pop.hidden = true; });
   },
 };
-
-// Chữ viết tắt cho ô project ở rail: "my-app.web" → "MA", "proj" → "PR".
-function initials(name) {
-  const w = String(name).split(/[^\p{L}\p{N}]+/u).filter(Boolean);
-  return (w.length > 1 ? w[0][0] + w[1][0] : (w[0] || '?').slice(0, 2)).toUpperCase();
-}
 
 app.init().catch((e) => { console.error(e); toast(`Startup failed: ${e.message}`, 10000); });

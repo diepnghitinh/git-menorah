@@ -4,10 +4,24 @@ GitMenorah: changelog
 Newest release first.
 
 
-Unreleased
-----------
+1.0.5 (2026-10-22)
+------------------
 
 New
+- Discard in the Unstaged list. Each file and folder row has a Discard button
+  next to Stage, the Unstaged heading has "Discard all", and the diff of an
+  unstaged file has Discard too. Changed and deleted files go back to their
+  staged (or committed) version with git restore --worktree, so a file's staged
+  part is kept; untracked files are deleted with git clean -f. It always opens
+  the confirmation with the exact commands, because discarded changes cannot be
+  recovered. Untracked secret files (.env.local, keys…) are never deleted from
+  the page, and conflicted files are left alone.
+- Markdown preview in the Files view. A .md file opens with a "Preview | Code"
+  switch: Preview renders headings, lists and task lists, tables, quotes, code
+  blocks with colours, links and images from the repository; Code shows the
+  source with line numbers. Links to other files in the repository open them
+  in a tab, #section links scroll to the heading. Raw HTML in the file is shown
+  as text, not run. The choice is remembered.
 - Accounts (Settings → Accounts, or GitMenorah → Accounts…): sign in to
   GitHub, GitHub Enterprise, GitLab (also self-hosted), Bitbucket Cloud or any
   other host with a personal access token, like in Sourcetree. The token is
@@ -22,13 +36,40 @@ New
   repository is added to the Git tab (to its project group when it lands in a
   project folder). The last "Clone into" folder is remembered.
 - The first-run prompt offers "Clone from URL…".
+- Paste an image onto the canvas (⌘V / Ctrl+V while no terminal or text box
+  has focus): a screenshot, an image copied from a browser, or an image file
+  copied in Finder becomes an image node under the mouse. Image nodes work like
+  in Figma: no frame, the name and buttons sit above the image and show on
+  hover; drag the image to move it; drag a corner or edge to resize it with
+  its aspect ratio kept (hold ⇧ to resize freely, double-click to get the
+  ratio back); Delete / Backspace removes the selected image. Drop an image
+  node onto a terminal or note to hand its path over; it springs back to its
+  place. New image nodes take the image's own proportions, and are sharper
+  when zoomed in.
 
 Changes
-- Canvas tab bar: no project name in front of the tabs. A new project's first
-  tab is named after the project folder. The + menu is now just "Open Folder…",
-  "Clone from URL…" and the repositories you already have (with a filter when
-  there are many).
+- Pull on a branch that has diverged from its upstream: the fast-forward
+  confirmation now offers the pull that works, in one click. "Pull with
+  rebase" when your local commits are not on the remote yet (no merge commit),
+  otherwise "Pull with merge". Shared and protected branches still never get a
+  rebase, and gitflow branches stay fast-forward only. This switches just that
+  pull, not the pull mode chosen in the toolbar.
+- Pull with merge or rebase no longer asks you to commit or stash first.
+  Uncommitted changes are stashed and put back after the pull (--autostash);
+  the confirmation says so. Merge pulls need git 2.27 or later for this; with
+  an older git the old rule (commit or stash first) stays.
+- The canvas tab bar is a breadcrumb: [project ▾] / tab 1 · tab 2 … The
+  project button opens the project list (switch, remove, Open Folder…), which
+  used to sit behind the project square at the top of the rail; that square is
+  gone. With no project open the bar shows just "Select Folder Project". A new
+  project's first tab is named after the project folder. The + menu is now
+  just "Open Folder…", "Clone from URL…" and the repositories you already have
+  (with a filter when there are many).
 - Settings has tabs: Accounts and Terminal limits.
+- An empty canvas no longer shows the "Choose a project folder" card. Open a
+  folder or repository with "Select Folder Project" in the canvas bar.
+- README rewritten: GitMenorah as a Git worktrees UI and one place to manage
+  every agent, with a download link to the GitHub Releases page.
 
 Fixes
 - Worktrees heading in a narrow sidebar: the "Newest | A–Z" switch wrapped and

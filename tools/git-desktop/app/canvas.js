@@ -15,7 +15,7 @@ const AGENTS = {
   codex: { label: 'Codex', mark: 'X' },
   shell: { label: 'Terminal', mark: '$' },
 };
-const MIN = { terminal: [360, 220], note: [180, 120], image: [160, 120] };
+const MIN = { terminal: [360, 220], note: [180, 120], image: [40, 30] };
 const DEFAULT_SIZE = { terminal: [720, 460], note: [260, 200], image: [360, 260] };
 const XTERM_THEME = {
   background: '#11151c', foreground: '#d7dde6', cursor: '#d7dde6', cursorAccent: '#11151c', selectionBackground: '#33415a',
@@ -212,7 +212,7 @@ class Canvas {
         return;
       }
       const nodeEl = e.target.closest?.('.node');
-      if (nodeEl && nodeEl.dataset.id === this.active && e.target.closest('.node-body')) return;   // node tự cuộn
+      if (nodeEl && nodeEl.dataset.id === this.active && !nodeEl.classList.contains('image') && e.target.closest('.node-body')) return;   // node tự cuộn
       e.preventDefault(); e.stopPropagation();
       this.doc.viewport.x -= e.deltaX; this.doc.viewport.y -= e.deltaY;
       this.applyViewport(); this.saveSoon();
@@ -253,13 +253,33 @@ class Canvas {
       if (v?.acceptPaths) { v.acceptPaths(paths); this.activate(v.n.id, true); return; }
       const pos = this.toWorld(e.clientX, e.clientY);
       const imgs = paths.filter(isImage);
-      imgs.forEach((p, i) => this.add({ kind: 'image', path: p, title: p.split(/[\\/]/).pop(), x: pos.x + i * 24, y: pos.y + i * 24 }));
+      imgs.forEach((p, i) => this.addImage(p, { x: e.clientX, y: e.clientY }, i));
       if (imgs.length < paths.length) toast('Drop files onto a terminal to hand their paths to the agent.');
+    });
+
+    // Dán ảnh lên nền (⌘V khi không gõ trong terminal / ô nhập): tệp ảnh đã copy (Finder) hoặc
+    // ảnh trong clipboard (ảnh chụp, ảnh copy từ trình duyệt) → node ảnh tại con trỏ.
+    st.addEventListener('pointermove', (e) => { this.pointer = { x: e.clientX, y: e.clientY }; });
+    st.addEventListener('pointerleave', () => { this.pointer = null; });
+    document.addEventListener('paste', async (e) => {
+      if (!this.doc || !this.stage.offsetParent || e.defaultPrevented) return;
+      const t = document.activeElement;
+      if (t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable || t.closest('.node.terminal, .modal, dialog'))) return;
+      e.preventDefault();
+      const at = this.pointer;
+      let paths = (await droppedPaths(e.clipboardData)).filter(isImage);
+      if (!paths.length && !e.clipboardData.types.includes('text/plain')) {
+        const p = await window.menorah.clipboardImage();
+        if (p) paths = [p];
+      }
+      if (!paths.length) { toast('The clipboard has no image to paste onto the canvas.'); return; }
+      paths.forEach((p, i) => this.addImage(p, at, i));
     });
 
     document.addEventListener('keydown', (e) => {
       if (document.activeElement && /^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName)) return;
       if ((e.key === 'Delete' || e.key === 'Backspace') && this.selLink) { this.removeLink(this.selLink); e.preventDefault(); }
+      else if ((e.key === 'Delete' || e.key === 'Backspace') && this.node(this.active)?.kind === 'image' && this.stage.offsetParent) { this.remove(this.active); e.preventDefault(); }
       if (e.key === 'Escape') { this.selectLink(null); }
     });
   }
@@ -285,6 +305,15 @@ class Canvas {
     this.changed();
     this.activate(n.id, true);
     return n;
+  }
+
+  // Node ảnh căn giữa tại điểm màn hình `at` (không có thì giữa khung nhìn); ImageView chỉnh lại
+  // khung theo tỉ lệ ảnh khi ảnh nạp xong, vẫn giữ tâm.
+  addImage(path, at, i = 0) {
+    const [w, hgt] = DEFAULT_SIZE.image;
+    const spec = { kind: 'image', path, title: path.split(/[\\/]/).pop() };
+    if (at) { const p = this.toWorld(at.x, at.y); spec.x = Math.round(p.x - w / 2 + i * 24); spec.y = Math.round(p.y - hgt / 2 + i * 24); }
+    return this.add(spec);
   }
 
   mount(n, opts = {}) {
@@ -332,12 +361,25 @@ class Canvas {
   }
 
   // Kéo tiêu đề để di chuyển, kéo cạnh/góc để đổi cỡ.
+  // Node ảnh thả lên terminal / ghi chú → gửi đường dẫn ảnh cho node đó, ảnh về chỗ cũ.
   dragMove(e, n) {
     const sx = e.clientX; const sy = e.clientY; const ox = n.x; const oy = n.y; const z = this.doc.viewport.zoom;
     const t = e.currentTarget; t.setPointerCapture(e.pointerId);
-    const move = (ev) => { n.x = Math.round(ox + (ev.clientX - sx) / z); n.y = Math.round(oy + (ev.clientY - sy) / z); this.place(n); this.drawLinks(); };
+    const self = this.views.get(n.id)?.el;
+    let target = null;
+    const aim = (el) => { if (target !== el) { target?.classList.remove('drop'); target = el; target?.classList.add('drop'); self?.classList.toggle('handing', !!el); } };
+    const move = (ev) => {
+      n.x = Math.round(ox + (ev.clientX - sx) / z); n.y = Math.round(oy + (ev.clientY - sy) / z); this.place(n); this.drawLinks();
+      if (n.kind === 'image') aim(document.elementsFromPoint(ev.clientX, ev.clientY).map((el) => el.closest('.node')).find((el) => el && el !== self && el.matches('.terminal, .note')) || null);
+    };
     t.addEventListener('pointermove', move);
-    t.addEventListener('pointerup', () => { t.removeEventListener('pointermove', move); this.changed(); }, { once: true });
+    t.addEventListener('pointerup', () => {
+      t.removeEventListener('pointermove', move);
+      const v = target && this.views.get(target.dataset.id);
+      aim(null);
+      if (v?.acceptPaths) { n.x = ox; n.y = oy; this.place(n); this.drawLinks(); v.acceptPaths([n.path]); this.activate(v.n.id, true); return; }
+      this.changed();
+    }, { once: true });
   }
 
   dragResize(e, n, dir) {
@@ -348,6 +390,16 @@ class Canvas {
     let raf = 0;
     const move = (ev) => {
       const dx = (ev.clientX - sx) / z; const dy = (ev.clientY - sy) / z;
+      // Ảnh: giữ tỉ lệ như Figma, giữ ⇧ để kéo tự do. Kéo cạnh thì cạnh kia theo tỉ lệ.
+      if (n.kind === 'image' && n.ar && !ev.shiftKey) {
+        const sw = dir.includes('e') ? o.w + dx : dir.includes('w') ? o.w - dx : 0;
+        const sh = dir.includes('s') ? o.h + dy : dir.includes('n') ? o.h - dy : 0;
+        n.w = Math.max(mw, Math.round(Math.max(sw, sh * n.ar))); n.h = Math.max(mh, Math.round(n.w / n.ar));
+        n.x = dir.includes('w') ? o.x + o.w - n.w : o.x;
+        n.y = dir.includes('n') ? o.y + o.h - n.h : o.y;
+        this.place(n); this.drawLinks();
+        return;
+      }
       if (dir.includes('e')) n.w = Math.max(mw, Math.round(o.w + dx));
       if (dir.includes('s')) n.h = Math.max(mh, Math.round(o.h + dy));
       if (dir.includes('w')) { n.w = Math.max(mw, Math.round(o.w - dx)); n.x = o.x + o.w - n.w; }
@@ -736,14 +788,29 @@ class NoteView extends NodeView {
 }
 
 // ─── Ảnh ────────────────────────────────────────────────────────────────────
-// Kéo ảnh trong node sang terminal để gửi đường dẫn.
+// Như Figma: kéo ảnh để di chuyển, kéo góc / cạnh để đổi cỡ giữ tỉ lệ (⇧ tự do), nhấp đúp ảnh
+// để về đúng tỉ lệ, Delete để xoá. Tên và nút nằm phía trên ảnh, hiện khi rê chuột / chọn.
+// Thả ảnh lên terminal hoặc ghi chú để gửi đường dẫn (Canvas.dragMove).
 class ImageView extends NodeView {
   constructor(canvas, n) {
     super(canvas, n);
     this.head.append(this.titleEl, h('button.node-btn', { title: 'Show in Finder', onclick: () => window.menorah.reveal(n.path) }, icon('folder')), ...this.headButtons());
-    const img = h('img', { draggable: true, alt: n.title, title: `${n.path}\nDrag into a terminal to hand it to the agent` });
-    img.addEventListener('dragstart', (e) => { e.dataTransfer.setData('application/x-menorah-path', n.path); e.dataTransfer.effectAllowed = 'copy'; });
-    window.menorah.thumb(n.path).then((u) => { if (u) img.src = u; else this.body.replaceChildren(h('p.muted', 'Could not read the image (deleted?)')); });
+    const img = h('img', { draggable: false, alt: n.title, title: `${n.path}\nDrag onto a terminal to hand it to the agent · ⇧ while resizing to ignore the aspect ratio` });
+    img.addEventListener('load', () => {
+      const ar = img.naturalWidth / img.naturalHeight;
+      if (!ar || n.ar) return;
+      // Lần đầu: khung theo tỉ lệ ảnh, ngang tối đa 560, giữ tâm chỗ đã đặt.
+      const cx = n.x + n.w / 2, cy = n.y + n.h / 2;
+      n.ar = ar; n.w = Math.max(MIN.image[0], Math.min(560, img.naturalWidth)); n.h = Math.round(n.w / ar);
+      n.x = Math.round(cx - n.w / 2); n.y = Math.round(cy - n.h / 2);
+      this.c.place(n); this.c.drawLinks(); this.c.changed();
+    });
+    window.menorah.thumb(n.path, 1600).then((u) => { if (u) img.src = u; else this.body.replaceChildren(h('p.muted', 'Could not read the image (deleted?)')); });
+    this.body.addEventListener('pointerdown', (e) => { if (e.button === 0) this.c.dragMove(e, this.n); });
+    this.body.addEventListener('dblclick', () => {
+      if (!n.ar) return;
+      n.h = Math.max(MIN.image[1], Math.round(n.w / n.ar)); this.c.place(n); this.c.drawLinks(); this.c.changed();
+    });
     this.body.append(img);
   }
 }
