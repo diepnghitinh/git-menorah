@@ -367,6 +367,11 @@
     resize:none;min-height:60px;color:var(--text);background:var(--panel)}
   .gk-commit textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
   .gk-commit .note{margin:0}
+  .gk-commit .ident{gap:6px;min-width:0}
+  .gk-commit .ident .gk-av{width:18px;height:18px;font-size:8.5px}
+  .gk-commit .ident .who{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)}
+  .gk-commit .ident .who.unset{color:var(--warn)}
+  .gk-commit .ident .sub{flex:none}
   .gk-commit .gen{display:inline-flex;align-items:center;gap:5px;padding:2px 9px;font-size:12px;line-height:20px}
   .gk-commit .gen .gk-ic{width:14px;height:14px}
   .gk-commit .gen.busy{color:var(--accent);border-color:var(--accent);opacity:1;cursor:progress}
@@ -486,6 +491,7 @@
   .ex-md blockquote{padding:0 14px;border-left:3px solid var(--border-strong);color:var(--muted)}
   .ex-md hr{border:none;border-top:1px solid var(--border);margin:24px 0}
   .ex-md img{max-width:100%;border-radius:4px;vertical-align:middle}
+  .ex-md video{display:block;max-width:100%;margin:0 0 14px;border-radius:6px;background:#000}
   .ex-md .tbl{overflow:auto}
   .ex-md table{border-collapse:collapse;font-size:13px}
   .ex-md th,.ex-md td{border:1px solid var(--border);padding:6px 12px}
@@ -990,7 +996,7 @@ async function gitLoadDetail() {
   let d;
   try { d = await api('/api/git/detail?' + q); } catch (e) { if (key === gitKey && seq === gitSeq) gkEmpty(e.message); return; }
   if (key !== gitKey || seq !== gitSeq) return;
-  const sig = JSON.stringify([d.status, d.branches, d.stash, d.fetchedAt, d.worktrees, d.submodules, d.hasEmail, gitN]);
+  const sig = JSON.stringify([d.status, d.branches, d.stash, d.fetchedAt, d.worktrees, d.submodules, d.identity, gitN]);
   if (sig === gitSig && gitG) {
     gitD = d; gkRenderBar();
     if (gitDiffOpen && !gitDiffOpen.sha) gkLoadDiff(true);   // sửa tiếp tệp đã sửa: trạng thái không đổi, nội dung đổi
@@ -1861,6 +1867,7 @@ function gkWipHtml() {
       <div class="row"><b style="color:var(--text)">Commit</b><span class="spacer"></span><span class="cnt" id="gkSumCnt"></span>${gkGenButton()}</div>
       <input type="text" id="gkSum" placeholder="Summary (required)" value="${esc(m.summary || '')}" maxlength="200" autocomplete="off" spellcheck="false" />
       <textarea id="gkDesc" rows="3" style="${gkDescH()}" placeholder="Description (optional)">${esc(m.desc || '')}</textarea>
+      ${gkIdentRow()}
       <div class="note" id="gkCommitNote"></div>
       <button class="primary" id="gkCommit" data-git="commit" title="Ctrl/⌘ + Enter">Commit</button>
     </div>`;
@@ -1927,7 +1934,7 @@ function gkCommitReason() {
   if (s.detached) return [n, 'Detached HEAD — create a branch before committing.'];
   if (d.protectedBranch) return [n, `${s.branch} only accepts changes through a pull request — create a feat branch and commit there.`];
   if (s.op) return [n, `${s.op} in progress — resolve the conflicts, then click Continue above.`];
-  if (!d.hasEmail) return [n, 'user.email is not set — run git config user.email "<email>" in this repository first.'];
+  if (!d.identity?.email) return [n, 'Set your name and email for commits first — click Set… above.'];
   if (!n) return [0, 'Stage at least one file to commit.'];
   if (!(m.summary || '').trim()) return [n, 'Enter a summary to commit.'];
   return [n, ''];
@@ -1948,6 +1955,60 @@ function gkCommitState() {
   const w = document.querySelector('#gkRows .gk-row.wip .wipmsg');
   if (w) w.textContent = sum || gkWipCounts(gitD.status);
 }
+// Tên + email ghi vào commit: dòng "Committing as …" trong khung Commit, bấm Change… để sửa
+// cho riêng repo này (.git/config) hoặc cho mọi repo (~/.gitconfig).
+function gkIdentRow() {
+  const id = gitD.identity || {};
+  if (!id.email) return `<div class="row ident"><span class="who unset">No name &amp; email set for commits</span><span class="spacer"></span><button class="link" data-ident>Set…</button></div>`;
+  const who = `${id.name || '(no name)'} <${id.email}>`;
+  return `<div class="row ident"><span class="gk-av" style="background:${gkAvColor(id.name || id.email)}">${esc(gkInitials(id.name || id.email))}</span>
+    <span class="who" title="Commits are written as ${esc(who)}">${esc(who)}</span>
+    <span class="sub" title="${id.local ? "Set in this repository's .git/config — overrides your global setting" : 'From your global ~/.gitconfig'}">· ${id.local ? 'this repo' : 'global'}</span>
+    <span class="spacer"></span><button class="link" data-ident title="Change the name and email written into your commits">Change…</button></div>`;
+}
+async function gkIdentityDialog() {
+  const id = gitD.identity || { global: {} }, sel = gitSel;
+  const f = { scope: id.local ? 'repo' : 'global' };
+  // Đổi phạm vi thì điền sẵn giá trị đang có ở phạm vi đó (global trống thì giữ thứ PO đang gõ).
+  const fill = (root) => {
+    const src = f.scope === 'repo' ? id : id.global;
+    if (src.name) root.querySelector('#idName').value = src.name;
+    if (src.email) root.querySelector('#idEmail').value = src.email;
+    root.querySelector('#idNote').textContent = f.scope === 'repo'
+      ? `Saved in ${gitD.label}'s .git/config (all its worktrees) — other repositories keep their own setting.`
+      : `Saved in ~/.gitconfig — used by every repository that has no setting of its own.${id.local ? ` ${gitD.label}'s own setting is removed so it uses this one too.` : ''}`;
+  };
+  await gitDialog({
+    title: 'Name & email for commits', ok: 'Save', focus: '#idName',
+    html: `<div class="gk-form">
+      <div class="row"><span class="lbl">Use for</span><div class="seg" id="idScope">
+        <button data-scope="repo" class="${f.scope === 'repo' ? 'active' : ''}">This repository</button><button data-scope="global" class="${f.scope === 'global' ? 'active' : ''}">All repositories</button></div></div>
+      <div class="row"><span class="lbl">Name</span><input type="text" id="idName" maxlength="100" placeholder="Your Name" autocomplete="name" spellcheck="false" value="${esc(id.name || '')}" /></div>
+      <div class="row"><span class="lbl">Email</span><input type="text" id="idEmail" maxlength="200" placeholder="you@example.com" autocomplete="email" spellcheck="false" value="${esc(id.email || '')}" /></div>
+      <div class="gd-check"><span id="idNote"></span></div>
+      <div class="gd-check"><span>Only new commits use it — commits already made keep their author.</span></div></div>`,
+    mount: (root, okB) => {
+      fill(root);
+      root.querySelector('#idScope').onclick = (e) => {
+        const b = e.target.closest('[data-scope]');
+        if (!b) return;
+        f.scope = b.dataset.scope;
+        for (const x of root.querySelectorAll('[data-scope]')) x.classList.toggle('active', x === b);
+        fill(root);
+      };
+      for (const i of root.querySelectorAll('input')) i.onkeydown = (e) => { if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) okB.click(); };
+    },
+    beforeOk: async () => {
+      let res;
+      try { res = await api('/api/git/identity', { repo: sel.repo, wt: sel.wt || '', scope: f.scope, name: $('idName').value, email: $('idEmail').value }); }
+      catch (e) { toast(e.message); return false; }
+      if (gitD && gitSel?.repo === sel.repo) { gitD.identity = res; gkRenderRight(); }
+      toast(`Commits ${f.scope === 'repo' ? `in ${gitD.label} ` : ''}now use ${res.name} <${res.email}>`);
+      return true;
+    },
+  });
+}
+
 // Nút Generate: Claude viết summary + description từ diff đã stage (server gọi `claude -p`).
 // Nháp đang gõ gửi kèm làm gợi ý; PO sửa message trong lúc chờ thì giữ bản của PO.
 const gitGen = new Set();   // gitKey đang chờ Claude viết
@@ -2316,9 +2377,10 @@ function exHl(text, path) {
 }
 
 // Xem trước Markdown (README, docs) ở chế độ Files: tiêu đề, đoạn, danh sách lồng nhau (có
-// ô task), trích dẫn, bảng, khối code tô màu, liên kết, ảnh. HTML thô trong tệp hiện nguyên
-// văn — mọi chữ đều qua esc() trước, liên kết chỉ nhận http(s)/mailto/#/đường dẫn tương đối.
+// ô task), trích dẫn, bảng, khối code tô màu, liên kết, ảnh, video GitHub. HTML thô trong tệp hiện
+// nguyên văn — mọi chữ đều qua esc() trước, liên kết chỉ nhận http(s)/mailto/#/đường dẫn tương đối.
 const EX_MD = /\.(md|markdown|mdx)$/i;
+const EX_MD_VIDEO = /^https:\/\/(github\.com\/user-attachments\/assets\/[\w-]+|user-images\.githubusercontent\.com\/[\w/.-]+\.(mp4|mov|webm))$/i;
 function exMdHtml(src, path) {
   const base = path.includes('/') ? path.slice(0, path.lastIndexOf('/') + 1) : '';
   // Đường dẫn trong repo (tương đối theo tệp, hay /từ gốc repo) → đường dẫn chuẩn, hoặc null nếu ra ngoài repo.
@@ -2446,6 +2508,8 @@ function exMdHtml(src, path) {
       }
       const st = lines[i]?.match(/^ {0,3}(=+|-+) *$/);
       if (st) { const x = inline(p.join('\n')), n = st[1][0] === '=' ? 1 : 2; out.push(`<h${n} data-anchor="${esc(slug(x))}">${x}</h${n}>`); i++; continue; }
+      // Link video GitHub đứng riêng một đoạn → trình phát ngay trong trang, như GitHub.
+      if (p.length === 1 && EX_MD_VIDEO.test(p[0].trim())) { out.push(`<video src="${esc(p[0].trim())}" controls preload="metadata"></video>`); continue; }
       out.push(`<p>${inline(p.join('\n'))}</p>`);
     }
     return out.join('');
@@ -3478,6 +3542,7 @@ $('gkRight').addEventListener('click', (e) => {
   if (all) return all.disabled ? null : gitAct(all.dataset.all, { all: true });
   const gen = e.target.closest('[data-gen]');
   if (gen) return gen.disabled ? null : gkGenerate();
+  if (e.target.closest('[data-ident]')) return gkIdentityDialog();
   const g = e.target.closest('[data-git]');
   if (g) {
     if (g.disabled) return;

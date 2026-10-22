@@ -377,11 +377,11 @@ async function gitSubmodules(dir) {
 
 async function gitDetail(body) {
   const { r, dir, wt, wts } = await gitTarget(body);
-  const [status, br, stash, subs, fetched, email, wtStat] = await Promise.all([
+  const [status, br, stash, subs, fetched, identity, wtStat] = await Promise.all([
     gitStatus(dir, 'all', 1000), gitBranches(dir),
     gitLines(dir, ['stash', 'list', '--format=%H%x09%gd%x09%ct%x09%gs']),
     gitSubmodules(dir), fetchedAt(dir),
-    git(dir, ['config', 'user.email'], 3000),
+    gitIdentity(dir),
     // ↑↓ của từng worktree cho thanh trái — bỏ tệp mới để đọc nhanh.
     Promise.all(wts.extra.map((w) => gitStatus(w.path, 'no', 0))),
   ]);
@@ -395,7 +395,7 @@ async function gitDetail(body) {
     }),
     status, branches: br, remotes: br.remotes, fetchedAt: fetched, submodules: subs,
     stash: stash.map((ln) => { const [hash, ref, when, ...m] = ln.split('\t'); return { hash, ref, when, subject: m.join('\t') }; }),
-    hasEmail: !!email.out.trim(),
+    identity,
     canPush: !r.readOnly, protectedBranch: r.gitflow && PROTECTED_RE.test(status.branch || ''),
   };
 }
@@ -589,10 +589,46 @@ function commitMessage(body) {
   if (desc.length > 8000) return { err: 'The description is longer than 8000 characters.' };
   return { args: ['commit', '-m', summary, ...(desc ? ['-m', desc] : [])] };
 }
+// Tên + email ghi vào commit. Một lệnh đọc mọi tầng (global, local…): giá trị cuối cùng là giá trị
+// git dùng; `local` = repo có cấu hình riêng (đè global), `global` để hộp sửa điền sẵn.
+async function gitIdentity(dir) {
+  const r = await git(dir, ['config', '--show-scope', '--get-regexp', '^user\\.(name|email)$'], 3000);
+  const id = { name: '', email: '', local: false, global: { name: '', email: '' } };
+  // git < 2.26 không có --show-scope (exit 129; exit 1 = chưa đặt gì): chỉ đọc giá trị đang dùng.
+  if (!r.ok && r.code !== 1) {
+    const [n, e] = await Promise.all(['user.name', 'user.email'].map((k) => git(dir, ['config', k], 3000)));
+    return { ...id, name: n.out.trim(), email: e.out.trim() };
+  }
+  for (const ln of r.out.split('\n')) {
+    const m = /^(\w+)\tuser\.(name|email)(?: (.*))?$/.exec(ln);
+    if (!m) continue;
+    const v = (m[3] || '').trim();
+    id[m[2]] = v;
+    if (m[1] === 'global') id.global[m[2]] = v;
+    if (m[1] === 'local' || m[1] === 'worktree') id.local = true;
+  }
+  return id;
+}
 async function commitAuthor(dir) {
-  const [email, name] = await Promise.all([git(dir, ['config', 'user.email'], 3000), git(dir, ['config', 'user.name'], 3000)]);
-  if (!email.out.trim()) return { err: 'user.email is not set — run git config user.email "<email>" in this repository, then commit.' };
-  return { text: `${name.out.trim() || '(user.name not set)'} <${email.out.trim()}>` };
+  const { name, email } = await gitIdentity(dir);
+  if (!email) return { err: 'Your email for commits is not set — set it with Change… under the Commit box, then commit.' };
+  return { text: `${name || '(user.name not set)'} <${email}>` };
+}
+// Hộp "Name & email": scope "repo" ghi vào .git/config của repo (mọi worktree dùng chung);
+// "global" ghi ~/.gitconfig và bỏ cấu hình riêng của repo này để nó dùng luôn giá trị mới.
+async function gitSetIdentity(body) {
+  const { dir } = await gitTarget(body);
+  const name = String(body.name || '').trim(), email = String(body.email || '').trim();
+  if (!name || name.length > 100 || /[\0-\x1f<>]/.test(name)) throw new Error('Enter your name — up to 100 characters, no < or >.');
+  if (!EMAIL_RE.test(email) || email.length > 200 || /[<>]/.test(email)) throw new Error('Enter a valid email, e.g. you@example.com.');
+  const scope = body.scope === 'global' ? 'global' : 'local';
+  for (const [k, v] of [['user.name', name], ['user.email', email]]) {
+    const r = await git(dir, ['config', `--${scope}`, k, v], 5000);
+    if (!r.ok) throw new Error(`git config ${k} failed: ${(r.err || r.out).trim() || r.code}`);
+  }
+  // Exit 5 = repo không có khoá đó — không phải lỗi.
+  if (scope === 'global') for (const k of ['user.name', 'user.email']) await git(dir, ['config', '--local', '--unset-all', k], 5000);
+  return gitIdentity(dir);
 }
 const wtShortName = (rel) => rel.replace(/^\.worktrees\//, '');
 
@@ -1798,6 +1834,7 @@ export async function gitRoute(req, res, url) {
   if (get && p === '/api/git/groups') return out(groupsView());
   if (get && p === '/api/git/overview') return out(await gitOverview());
   if (post && p === '/api/git/run') return out(await gitRun(await readBody(req)));
+  if (post && p === '/api/git/identity') return out(await gitSetIdentity(await readBody(req)));
   if (post && p === '/api/git/suggest-message') return out(await gitSuggestMessage(await readBody(req)));
   if (post && p === '/api/git/extra') return out(await gitAddExtra(await readBody(req)));
   if (post && p === '/api/git/groups/scan') return out(await gitGroupScan(await readBody(req)));
