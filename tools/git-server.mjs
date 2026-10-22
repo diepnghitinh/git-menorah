@@ -177,8 +177,10 @@ const GIT_QUICK_OPS = new Set(['fetch', 'stage', 'unstage']);   // chạy ngay, 
 const GIT_HISTORY_MAX = 40;
 let gitHistory = [];          // { t, repo, wt, title, ok, steps: [{ cmd, code, out }] }
 const gitBusy = new Set();    // thư mục repo đang chạy lệnh ghi
+const gitRunning = new Map(); // thư mục repo → { cmd, step, of, phase, pct, line } của lệnh đang chạy
 
-function git(cwd, args, timeout = 15000) {
+// `onErr` nhận stderr ngay khi git in ra (dòng tiến độ của --progress) — output đầy đủ vẫn trả ở cuối.
+function git(cwd, args, timeout = 15000, onErr = null) {
   const env = PATH_CMDS.has(args[0]) ? GIT_ENV_LITERAL : GIT_ENV;
   return new Promise((done) => {
     let settled = false;
@@ -186,6 +188,7 @@ function git(cwd, args, timeout = 15000) {
     const child = execFile('git', ['-C', cwd, '-c', 'core.quotepath=false', '-c', 'color.ui=never', ...args],
       { timeout, killSignal: 'SIGKILL', env, maxBuffer: 8 * 1024 * 1024 }, (e, so, se) =>
         finish({ ok: !e, code: e ? (e.killed ? 'timeout' : typeof e.code === 'number' ? e.code : 1) : 0, out: so || '', err: se || '' }));
+    if (onErr) child.stderr.on('data', (d) => onErr(String(d)));
     // Tiến trình cháu (ssh) có thể giữ pipe sau khi git bị giết — callback không về, khoá
     // repo kẹt tới khi khởi động lại server. Quá hạn 5s thì tự trả về.
     const guard = setTimeout(() => { child.kill('SIGKILL'); finish({ ok: false, code: 'timeout', out: '', err: '' }); }, timeout + 5000);
@@ -793,7 +796,7 @@ async function gitPlan(body) {
     if (!setUp && !s.ahead) plan.warn.push('No new commits to push.');
     if (dest === 'develop') plan.warn.push('Pushing develop: Jenkins dev will build this version.');
     plan.title = `Push ${s.branch} → ${remote}/${dest}`;
-    plan.steps.push({ args: ['push', ...(setUp ? ['-u'] : []), remote, `HEAD:refs/heads/${dest}`], timeout: 120000 });
+    plan.steps.push({ args: ['push', ...(setUp ? ['-u'] : []), remote, `HEAD:refs/heads/${dest}`], timeout: 120000, progress: true });
     return plan;
   }
 
@@ -1223,6 +1226,20 @@ async function linkNodeModules(repo, wtDir) {
   return done;
 }
 
+// Dòng tiến độ của git: "Writing objects:  45% (9/20), 1.20 MiB | 2.30 MiB/s", nối nhau bằng \r.
+const PROGRESS_RE = /^(?:remote: )?(Enumerating objects|Counting objects|Compressing objects|Writing objects|Receiving objects|Resolving deltas|Unpacking objects)\b/;
+function progressOf(chunk) {
+  const line = chunk.split(/[\r\n]+/).map((l) => l.trim()).filter(Boolean).pop();
+  if (!line) return {};
+  const m = PROGRESS_RE.exec(line), pct = /:\s+(\d{1,3})%/.exec(line);
+  // Dòng không phải tiến độ ("Total 3 (delta 0)…", "remote: …") thì giữ giai đoạn/phần trăm trước đó.
+  const out = { line: hideCred(line).slice(0, 200) };
+  return m ? { ...out, phase: m[1], pct: pct ? Math.min(100, +pct[1]) : null } : out;
+}
+// Bỏ các dòng tiến độ khỏi output lưu vào Command history — chỉ giữ thông báo thật của git/remote.
+const dropProgress = (err) => err.split('\n').map((l) => l.split('\r').pop())
+  .filter((l) => !PROGRESS_RE.test(l.trim()) && !/^(?:remote: )?(Delta compression using|Total \d)/.test(l.trim())).join('\n');
+
 const planView = ({ devDir, removedPath, ...plan }, dryRun) => ({ ...plan, dryRun, steps: plan.steps.map((x) => ({ cmd: cmdText(x.args), where: x.where || null })) });
 
 async function headBranch(dir) {
@@ -1253,14 +1270,20 @@ async function gitRun(body) {
       const note = await ensureWorktreeExclude(r.dir);
       if (note) steps.push({ cmd: note, code: 0, out: '' });
     }
-    for (const st of plan.steps) {
+    for (const [i, st] of plan.steps.entries()) {
       // Bước chạy ở worktree khác (merge vào develop) mang nhánh riêng để soát; bước tạo worktree thì không.
       const want = st.cwd ? st.branch : plan.branch;
       if (want !== undefined && body.op !== 'fetch' && (await headBranch(st.cwd || dir)) !== want) {
         steps.push({ cmd: cmdText(st.args), where: st.where || null, code: 'skip', out: `Stopped: HEAD is no longer on ${want || 'detached'} (a git command outside this page got in between).` });
         ok = false; break;
       }
-      const res = await git(st.cwd || dir, st.args, st.timeout || 30000);
+      const live = { cmd: cmdText(st.args), step: i + 1, of: plan.steps.length, phase: '', pct: null, line: '' };
+      gitRunning.set(r.real, live);
+      // Không có TTY thì git không in tiến độ — `--progress` bật lại; chỉ thêm lúc chạy để hộp
+      // xác nhận và Command history vẫn hiện đúng lệnh PO đã duyệt.
+      const args = st.progress ? [st.args[0], '--progress', ...st.args.slice(1)] : st.args;
+      const res = await git(st.cwd || dir, args, st.timeout || 30000, st.progress ? (t) => Object.assign(live, progressOf(t)) : null);
+      if (st.progress) res.err = dropProgress(res.err);
       const out = hideCred((res.out + (res.err ? (res.out ? '\n' : '') + res.err : '')).trimEnd())
         || (res.code === 'timeout' ? 'Timed out — check the network or your SSH key (this page cannot enter passwords).' : '');
       steps.push({ cmd: cmdText(st.args), code: res.code, out, where: st.where || null });
@@ -1274,6 +1297,7 @@ async function gitRun(body) {
     if (!ok && plan.devDir && (await gitStatus(plan.devDir, 'no', 0)).op === 'merge') plan.conflictWt = plan.devWt;
   } finally {
     gitBusy.delete(r.real);
+    gitRunning.delete(r.real);
   }
   const entry = { t: Date.now(), repo: r.label, wt, title: plan.title, ok, steps };
   if (!(plan.quiet && ok)) gitHistory = [entry, ...gitHistory].slice(0, GIT_HISTORY_MAX);
@@ -1761,6 +1785,10 @@ export async function gitRoute(req, res, url) {
   if (get && p === '/api/git/repos') return out(await gitList(url.searchParams.has('refresh')));
   if (get && p === '/api/git/detail') return out(await gitDetail({ repo: qp.repo, wt: qp.wt || '' }));
   if (get && p === '/api/git/history') return out(gitHistory);
+  if (get && p === '/api/git/progress') {
+    const r = (await gitRepos()).find((x) => x.id === qp.repo);
+    return out({ running: (r && gitRunning.get(r.real)) || null });
+  }
   if (get && p === '/api/git/graph') return out(await gitGraph(qp));
   if (get && p === '/api/git/commit') return out(await gitCommitInfo(qp));
   if (get && p === '/api/git/diff') return out(await gitDiff({ ...qp, staged: qp.staged === '1' }));

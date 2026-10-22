@@ -141,7 +141,9 @@
   .gk-split .gk-tool.caret{min-width:0;padding:5px 4px;border-radius:0 8px 8px 0;justify-content:center}
   .gk-split .gk-tool.caret .gk-ic{width:12px;height:12px}
   .gk-bar-r{display:flex;align-items:center;gap:2px;flex:1 1 0;justify-content:flex-end;min-width:0}
-  .gk-bar-r .sub{font-size:11.5px;color:var(--faint);margin-right:6px;white-space:nowrap}
+  .gk-bar-r .sub{font-size:11.5px;color:var(--faint);margin-right:6px;white-space:nowrap;font-variant-numeric:tabular-nums}
+  .gk-prog{display:inline-block;width:64px;height:4px;margin-left:7px;border-radius:2px;background:var(--border);vertical-align:middle;overflow:hidden}
+  .gk-prog i{display:block;height:100%;background:var(--accent);transition:width .3s}
   .gk-vsep{width:1px;align-self:stretch;background:var(--border);margin:6px 4px}
   .gk-home{border:none;background:none;padding:8px;border-radius:8px;color:var(--muted);line-height:0;margin-right:2px}
   .gk-home:hover:not(:disabled){background:var(--hover);color:var(--text)}
@@ -1218,7 +1220,7 @@ function gkRenderBar() {
       <button class="gk-tool" data-tool="pop" ${dis(!nStash)} title="Apply and drop the latest stash">${ic('pop')}Pop${nStash ? `<span class="bd">${nStash}</span>` : ''}</button>
     </div>
     <div class="gk-bar-r">
-      <span class="sub">${gitBusy ? 'Running…' : d ? (d.fetchedAt ? 'fetched ' + since(d.fetchedAt / 1000) : 'never fetched') : ''}</span>
+      <span class="sub" id="gkRunSub">${gitBusy ? gkRunText() : d ? (d.fetchedAt ? 'fetched ' + since(d.fetchedAt / 1000) : 'never fetched') : ''}</span>
       <button class="gk-tool" data-tool="fetch" ${gitBusy || !d ? 'disabled' : ''} title="git fetch --all --prune in this repository">${ic('fetch')}Fetch</button>
       <button class="gk-tool" data-tool="fetchall" ${gitBusy ? 'disabled' : ''} title="Fetch every repository in the list">${ic('layers')}Fetch all</button>
       <button class="gk-tool" data-tool="reload">${ic('reload')}Refresh</button>
@@ -3229,12 +3231,29 @@ async function gitAct(op, extra = {}) {
   return gitExec(body);
 }
 
+// Tiến độ lệnh đang chạy (push in "Writing objects 45%"…), hỏi server mỗi 500ms trong lúc chờ /api/git/run.
+let gitRunProg = null;
+function gkRunText() {
+  const p = gitRunProg;
+  if (p?.phase) return `<span title="${esc(p.line)}">${esc(p.phase)}${p.pct != null ? ` ${p.pct}%<span class="gk-prog"><i style="width:${p.pct}%"></i></span>` : '…'}</span>`;
+  return p?.of > 1 ? `Running ${p.step}/${p.of}…` : 'Running…';
+}
+
 async function gitExec(body) {
   gitBusy = true;
   gkRenderBar();
   gkCommitState();
-  let res = null;
+  let res = null, live = true;
+  const poll = setInterval(async () => {
+    let p;
+    try { p = (await api(`/api/git/progress?repo=${encodeURIComponent(body.repo)}`)).running; } catch { return; }
+    if (!live) return;
+    gitRunProg = p;
+    const sub = $('gkRunSub');
+    if (sub) sub.innerHTML = gkRunText();
+  }, 500);
   try { res = await api('/api/git/run', body); } catch (e) { toast(e.message); }
+  live = false; clearInterval(poll); gitRunProg = null;
   gitBusy = false;
   if (res?.block) toast(res.block);
   else if (res) {
