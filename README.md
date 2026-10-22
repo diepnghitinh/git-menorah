@@ -11,7 +11,9 @@ Put the two together: give each agent its own worktree, let agents share context
 
 **[⬇ Download GitMenorah](https://github.com/diepnghitinh/git-menorah/releases)** for macOS (Apple Silicon and Intel) or Windows x64.
 
-![Left: Project · Git with branches, worktrees and the commit graph. Right: the canvas with two Claude Code sessions wired together](tools/git-desktop/imgs/showcase.png)
+<video src="tools/images/gitmenorah-demo-music.mp4" controls muted playsinline width="100%"></video>
+
+[▶ Watch the demo video](tools/images/gitmenorah-demo-music.mp4)
 
 ---
 

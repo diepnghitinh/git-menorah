@@ -4,6 +4,18 @@ GitMenorah: changelog
 Newest release first.
 
 
+1.0.6 (2026-10-22)
+------------------
+
+Fixes
+- Copy in the Git tab works again. Copy SHA, Copy summary, Copy branch name,
+  Copy path and the other copy actions showed "Clipboard blocked by the
+  browser" in the app, because the Git tab runs in a frame that was not
+  allowed to write to the clipboard. The frame now has that permission, and
+  when the browser still refuses (an older browser, or the page opened over
+  plain http from another machine), the copy falls back to the classic way.
+
+
 1.0.5 (2026-10-22)
 ------------------
 

@@ -710,8 +710,19 @@ function toast(msg) {
   const t = $('toast'); t.textContent = msg; t.classList.add('show');
   clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 2600);
 }
+// navigator.clipboard is missing outside a secure context and rejected in an iframe without
+// allow="clipboard-write"; execCommand('copy') still works inside the click that asked for it.
 async function copy(text, msg) {
-  try { await navigator.clipboard.writeText(text); toast(msg); } catch { toast('Clipboard blocked by the browser'); }
+  try { await navigator.clipboard.writeText(text); return toast(msg); } catch {}
+  const ta = document.createElement('textarea');
+  ta.value = text; ta.setAttribute('readonly', '');
+  ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0;pointer-events:none';
+  const prev = document.activeElement;
+  document.body.append(ta); ta.select();
+  let ok = false;
+  try { ok = document.execCommand('copy'); } catch {}
+  ta.remove(); prev?.focus?.();
+  toast(ok ? msg : 'Clipboard blocked by the browser');
 }
 
 // ── Color mode: the menu sits in the Git toolbar. ──
