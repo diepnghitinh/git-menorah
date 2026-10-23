@@ -126,3 +126,68 @@ func TestContextGraph(t *testing.T) {
 		t.Errorf("node lạ = %q", got)
 	}
 }
+
+func TestScanCache(t *testing.T) {
+	line := func(s string) []byte { return []byte(s) }
+	user := func(ts string) []byte {
+		return line(`{"type":"user","timestamp":"` + ts + `","message":{"content":"hi"}}`)
+	}
+	asst := func(ts, cc string) []byte {
+		return line(`{"type":"assistant","timestamp":"` + ts + `","message":{"model":"claude-opus-5-5","usage":{"input_tokens":1,"cache_creation":` + cc + `}}}`)
+	}
+	h1, m5, none := `{"ephemeral_1h_input_tokens":10,"ephemeral_5m_input_tokens":0}`, `{"ephemeral_1h_input_tokens":0,"ephemeral_5m_input_tokens":7}`, `{}`
+	ms := func(ts string) float64 { return parseTs(ts) }
+
+	// Request gửi lúc dòng user trước phản hồi, không phải lúc phản hồi viết xong; TTL lấy từ
+	// request gần nhất có ghi cache.
+	var info tailInfo
+	applyCache(&info, scanCache([][]byte{
+		user("2026-10-22T10:00:00Z"), asst("2026-10-22T10:00:05Z", m5),
+		user("2026-10-22T10:01:00Z"), asst("2026-10-22T10:03:00Z", none), asst("2026-10-22T10:03:10Z", none),
+	}), 0)
+	if info.CacheAt == nil || *info.CacheAt != ms("2026-10-22T10:01:00Z") || info.CacheTTL != 300 || info.Compacted {
+		t.Errorf("full scan: cacheAt=%v ttl=%v compacted=%v", info.CacheAt, info.CacheTTL, info.Compacted)
+	}
+
+	// Đọc nối: đoạn mới chỉ có phản hồi → lấy dòng user của lần đọc trước.
+	applyCache(&info, scanCache([][]byte{user("2026-10-22T11:00:00Z")}), info.userAt)
+	applyCache(&info, scanCache([][]byte{asst("2026-10-22T11:02:00Z", h1)}), info.userAt)
+	if *info.CacheAt != ms("2026-10-22T11:00:00Z") || info.CacheTTL != 3600 {
+		t.Errorf("incremental: cacheAt=%v ttl=%v", *info.CacheAt, info.CacheTTL)
+	}
+
+	// /compact sau phản hồi cuối → khỏi đếm; prompt mới sau compact thì đếm lại.
+	applyCache(&info, scanCache([][]byte{
+		line(`{"type":"system","subtype":"compact_boundary","timestamp":"2026-10-22T11:10:00Z"}`),
+		line(`{"type":"user","isCompactSummary":true,"timestamp":"2026-10-22T11:10:01Z","message":{"content":"sum"}}`),
+		user("2026-10-22T11:10:02Z"),
+	}), info.userAt)
+	if !info.Compacted || info.CacheAt != nil {
+		t.Errorf("compact: compacted=%v cacheAt=%v", info.Compacted, info.CacheAt)
+	}
+	applyCache(&info, scanCache([][]byte{user("2026-10-22T11:20:00Z"), asst("2026-10-22T11:20:09Z", h1)}), info.userAt)
+	if info.Compacted || info.CacheAt == nil || *info.CacheAt != ms("2026-10-22T11:20:00Z") {
+		t.Errorf("after compact: compacted=%v cacheAt=%v", info.Compacted, info.CacheAt)
+	}
+
+	// Sub agent (sidechain) và phản hồi <synthetic> không làm mới cache của phiên chính.
+	c := scanCache([][]byte{
+		user("2026-10-22T12:00:00Z"), asst("2026-10-22T12:00:03Z", h1),
+		line(`{"type":"assistant","isSidechain":true,"timestamp":"2026-10-22T12:30:00Z","message":{"model":"claude-haiku-5-5","usage":{"input_tokens":1}}}`),
+		line(`{"type":"assistant","timestamp":"2026-10-22T12:31:00Z","message":{"model":"<synthetic>","usage":{"input_tokens":0}}}`),
+	})
+	if c.reqAt != ms("2026-10-22T12:00:00Z") {
+		t.Errorf("sidechain/synthetic: reqAt=%v", c.reqAt)
+	}
+}
+
+func TestHasLocale(t *testing.T) {
+	if hasLocale([]string{"HOME=/x", "LANG="}) {
+		t.Error("empty LANG counts as no locale")
+	}
+	for _, kv := range []string{"LANG=vi_VN.UTF-8", "LC_ALL=en_US.UTF-8", "LC_CTYPE=UTF-8"} {
+		if !hasLocale([]string{"HOME=/x", kv}) {
+			t.Errorf("%s should count as a locale", kv)
+		}
+	}
+}

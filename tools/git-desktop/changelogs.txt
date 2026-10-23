@@ -7,7 +7,38 @@ Newest release first.
 1.0.6 (2026-10-22)
 ------------------
 
+New
+- Name and email for commits in the Git tab. The Commit box shows
+  "Committing as name <email>", marked as this repository or global, with a
+  Set… / Change… button. The dialog saves to the repository's .git/config or to
+  ~/.gitconfig; saving globally also removes the repository's own value so the
+  new one takes effect. Committing no longer fails with a "run git config
+  user.email" hint that sent you to a terminal.
+- Live push progress in the Git tab toolbar, e.g. "Writing objects 45%" with a
+  small bar, instead of a bare "Running…" until the push finished. Command
+  history still shows only the approved command.
+- Prompt cache clock on Claude nodes. While Claude is waiting, the node header
+  shows how long its prompt cache stays warm (usually 1 hour from the last
+  request); it turns amber in the last minutes and red ("cold") once expired,
+  when the next prompt re-sends the whole context. Click it to run /compact.
+  The notch shows the same "cache 12:34" / "cache cold".
+- A notification a few minutes before a Claude session's prompt cache cools;
+  click it to open the session, then prompt or run /compact. On by default,
+  turn it off in View → Notify Before Prompt Cache Cools.
+- Markdown preview plays a standalone GitHub video link inline, as GitHub
+  does, so the README demo video plays in the Files view.
+
 Fixes
+- Browse… in "Add project folder" and "Add repository outside the project"
+  works on Windows. It used to say the folder picker is macOS only; it now
+  opens the Windows folder dialog, and folder names with accents or CJK
+  characters come back intact.
+- Copying text from a terminal on the canvas no longer garbles non-ASCII
+  characters ("có làm gì" became "c√≥ l√†m g√¨"). When the app is started from
+  Finder or the Dock it has no LANG, so the clipboard read UTF-8 as Mac Roman;
+  terminals now get LANG=en_US.UTF-8 unless a locale is already set.
+  Vietnamese, Chinese, Japanese, Korean, emoji and every other script copy
+  correctly. Applies to terminals opened after the update.
 - Copy in the Git tab works again. Copy SHA, Copy summary, Copy branch name,
   Copy path and the other copy actions showed "Clipboard blocked by the
   browser" in the app, because the Git tab runs in a frame that was not

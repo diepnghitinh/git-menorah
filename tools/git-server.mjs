@@ -111,12 +111,40 @@ async function kindOf(p) {
   } catch { return 'missing'; }
 }
 
-// Hộp chọn thư mục của macOS. Đường dẫn mặc định đi qua argv, không ghép vào chuỗi
-// AppleScript — khỏi lo dấu nháy trong tên thư mục.
-export function pickFolder({ prompt = 'Choose a folder', from = homedir() } = {}) {
+// Windows: FolderBrowserDialog qua PowerShell. Đường dẫn và lời nhắc đi qua biến môi trường,
+// không ghép vào mã PowerShell. Form TopMost làm chủ để hộp không chìm sau cửa sổ app; stdout
+// đặt UTF-8 để tên thư mục có dấu (tiếng Việt, CJK) không vỡ. Bấm Huỷ → không in gì.
+const PICK_PS = [
+  '[Console]::OutputEncoding = [Text.Encoding]::UTF8',
+  'Add-Type -AssemblyName System.Windows.Forms',
+  '$d = New-Object System.Windows.Forms.FolderBrowserDialog',
+  '$d.Description = $env:MENORAH_PICK_PROMPT',
+  '$d.SelectedPath = $env:MENORAH_PICK_FROM',
+  '$d.ShowNewFolderButton = $true',
+  '$o = New-Object System.Windows.Forms.Form -Property @{ TopMost = $true }',
+  'if ($d.ShowDialog($o) -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::Out.Write($d.SelectedPath) }',
+].join('; ');
+
+function pickFolderWin(start, prompt) {
   return new Promise((done, fail) => {
-    if (process.platform !== 'darwin') return fail(new Error('The folder picker is macOS only — paste the path instead.'));
-    const start = existsSync(from) ? from : homedir();
+    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-STA', '-ExecutionPolicy', 'Bypass', '-Command', PICK_PS], {
+      timeout: 5 * 60 * 1000, windowsHide: true,
+      env: { ...process.env, MENORAH_PICK_FROM: start, MENORAH_PICK_PROMPT: prompt },
+    }, (e, so, se) => {
+      if (e) return fail(new Error(`Could not open the folder picker: ${(se || e.message).trim()}`));
+      const path = so.trim();
+      done(path ? { path } : { cancelled: true });
+    });
+  });
+}
+
+// Hộp chọn thư mục của hệ điều hành. macOS: đường dẫn mặc định đi qua argv, không ghép vào
+// chuỗi AppleScript — khỏi lo dấu nháy trong tên thư mục.
+export function pickFolder({ prompt = 'Choose a folder', from = homedir() } = {}) {
+  const start = existsSync(from) ? from : homedir();
+  if (process.platform === 'win32') return pickFolderWin(start, prompt);
+  return new Promise((done, fail) => {
+    if (process.platform !== 'darwin') return fail(new Error('The folder picker is not available on this system — paste the path instead.'));
     execFile('osascript', [
       '-e', 'on run argv',
       '-e', 'activate',

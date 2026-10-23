@@ -35,6 +35,7 @@ contextBridge.exposeInMainWorld('menorah', {
 
   chatRead: (q) => ipcRenderer.invoke('ws:chat-read', q),
   subagents: (list) => ipcRenderer.invoke('ws:subagents', list),
+  cache: () => ipcRenderer.invoke('ws:cache'),
 
   pathOf: (file) => { try { return webUtils.getPathForFile(file) || ''; } catch { return ''; } },
   stash: (paths) => ipcRenderer.invoke('ws:file-stash', paths),

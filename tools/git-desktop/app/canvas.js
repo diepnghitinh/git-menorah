@@ -51,6 +51,9 @@ class Canvas {
     this.bindMinimap();
     setInterval(() => this.pollStatus(), 1500);
     setInterval(() => this.pollSubagents(), 2000);
+    // Prompt cache: hỏi mốc 10s/lần, đồng hồ trên node tự đếm từng giây giữa hai lần hỏi.
+    setInterval(() => this.pollCache(), 10e3);
+    setInterval(() => { for (const v of this.views.values()) v.tickCache?.(); }, 1000);
   }
 
   node(id) { return this.doc?.nodes.find((n) => n.id === id); }
@@ -511,6 +514,15 @@ class Canvas {
     for (const [id, subs] of Object.entries(r)) this.views.get(id)?.setSubagents?.(subs);
   }
 
+  // Mốc prompt cache của các phiên Claude đang mở (agentd đọc transcript, như tai thỏ).
+  async pollCache() {
+    if (!this.doc || document.hidden || !this.doc.nodes.some((n) => n.kind === 'terminal' && n.agent === 'claude')) return;
+    let list;
+    try { list = await window.menorah.cache(); } catch { return; }
+    const by = new Map(list.map((x) => [x.nodeId, x]));
+    for (const v of this.views.values()) v.setCache?.(by.get(v.n.id));
+  }
+
   resumeAll() { for (const v of this.views.values()) if (v.stopped && v.n.kind === 'terminal') v.start(); }
 }
 
@@ -586,6 +598,7 @@ class TerminalView extends NodeView {
     this.head.append(...[
       h(`span.agent-mark.${n.agent}`, AGENTS[n.agent].mark), this.dot, this.titleEl,
       rel ? h('span.node-cwd', { title: n.cwd }, rel) : null,
+      n.agent === 'claude' ? (this.cacheEl = h('button.cache-chip', { hidden: true, onclick: () => this.compact() }, icon('clock'), this.cacheTxt = h('span'))) : null,
       isAgent ? h('div.mode', this.modeBtns) : null,
       ...this.headButtons(),
     ].filter(Boolean));
@@ -698,6 +711,40 @@ class TerminalView extends NodeView {
     this.dot.className = `status-dot ${s === 'stopped' ? '' : s}`;
     this.dot.title = { running: 'Running', idle: 'Waiting', stopped: 'Stopped', exited: 'Exited' }[s] || '';
     this.chat?.setState(s);
+    this.tickCache();
+  }
+
+  // ─── Prompt cache (chỉ Claude) ──────────────────────────────────────────
+  // Cache sống cacheTtl giây kể từ request cuối; qua mốc đó prompt kế tiếp ghi lại cả context.
+  setCache(x) {
+    this.cache = x && x.cacheAt && !x.compacted ? { end: x.cacheAt + (x.cacheTtl || 3600) * 1e3, ttl: x.cacheTtl || 3600 } : null;
+    this.tickCache();
+  }
+
+  tickCache() {
+    const el = this.cacheEl;
+    if (!el) return;
+    // Đang chạy thì cache liên tục được làm mới — đếm ngược lúc đó vô nghĩa.
+    if (!this.cache || this.status !== 'idle') { el.hidden = true; return; }
+    const left = this.cache.end - Date.now(), lead = Math.min(5 * 60e3, this.cache.ttl * 1e3 / 5);
+    const st = left <= 0 ? 'cold' : left <= lead ? 'soon' : 'warm';
+    const sec = Math.max(0, Math.ceil(left / 1000));
+    el.hidden = false;
+    el.className = `cache-chip ${st}`;
+    this.cacheTxt.textContent = st === 'cold' ? 'cold' : `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+    el.title = st === 'cold'
+      ? 'Prompt cache expired — the next prompt re-sends the whole context.\nClick to run /compact so later prompts start from a short summary.'
+      : `Prompt cache stays warm for ${Math.ceil(sec / 60)} more min.\nClick to run /compact now — cheapest while the cache is warm, and you can pick up later from the summary.`;
+  }
+
+  compact() {
+    if (this.stopped) return toast('The session is stopped — click Resume session first.');
+    if (this.status !== 'idle') return toast('Claude is busy — wait for it to finish, then compact.');
+    window.menorah.ptyWrite(this.n.id, '\x1b[200~/compact\x1b[201~');
+    setTimeout(() => window.menorah.ptyWrite(this.n.id, '\r'), 80);
+    this.cache = null;
+    this.tickCache();
+    this.focus();
   }
 
   setView(mode, initial) {

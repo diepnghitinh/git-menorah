@@ -23,6 +23,7 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const workspace = require('./workspace/backend.cjs');
 const { createNotch } = require('./workspace/notch.cjs');
+const { createCacheWatch } = require('./workspace/cache-watch.cjs');
 
 const SERVER = [
   path.join(__dirname, 'server', 'tools', 'git-server.mjs'),
@@ -241,6 +242,14 @@ function setNotch(on) {
   } else if (!on && notch) { notch.destroy(); notch = null; }
 }
 
+// Thông báo trước khi prompt cache của phiên Claude nguội (workspace/cache-watch.cjs). Mặc định bật.
+const cacheWatch = createCacheWatch({ list: () => workspace.notchList(), go: goNode });
+let cacheNotify = false;
+function setCacheNotify(on) {
+  cacheNotify = on;
+  if (on) cacheWatch.start(); else cacheWatch.stop();
+}
+
 // Nút Mở ở tai thỏ: đưa cửa sổ đang giữ project lên trước; chưa cửa sổ nào giữ thì dùng cửa
 // sổ app gần nhất (trang tự mở project), không còn cửa sổ nào thì mở mới.
 function goNode(it) {
@@ -358,6 +367,10 @@ function buildMenu() {
           label: 'Show Agents at the Notch', type: 'checkbox', checked: !!notch,
           click: (item) => { setNotch(item.checked); saveSettings({ notch: item.checked }); },
         }] : []),
+        {
+          label: 'Notify Before Prompt Cache Cools', type: 'checkbox', checked: cacheNotify,
+          click: (item) => { setCacheNotify(item.checked); saveSettings({ cacheNotify: item.checked }); },
+        },
         { type: 'separator' },
         { role: 'reload' },
         { role: 'toggleDevTools' },
@@ -408,6 +421,7 @@ if (!app.requestSingleInstanceLock()) {
     serveApp();
     await workspace.setup({ app, gitOrigin: () => server.origin, api, settings: { load: loadSettings, save: saveSettings } });
     setNotch(loadSettings().notch !== false);
+    setCacheNotify(loadSettings().cacheNotify !== false);
     buildMenu();
     const win = createWindow(undefined, 0);
     win.webContents.once('did-finish-load', () => firstRunHint(win));

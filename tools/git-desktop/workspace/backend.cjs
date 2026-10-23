@@ -541,6 +541,8 @@ async function setup({ app, gitOrigin, api, settings }) {
 
   // Agents
   handle('ws:agents', () => agentList());
+  // Mốc prompt cache của các phiên Claude đang mở (đồng hồ đếm ngược trên node terminal).
+  handle('ws:cache', () => notchList());
   // Repo đang có trong tab Git (để chọn thư mục cho canvas mới). Server Git chưa sẵn thì trả rỗng.
   handle('ws:repos', () => new Promise((done) => {
     const req = http.get(`${gitOrigin()}/api/git/repos`, (res) => {

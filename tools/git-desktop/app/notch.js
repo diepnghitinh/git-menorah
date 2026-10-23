@@ -119,6 +119,13 @@ function meta(it) {
     out.push(h(`span${pct >= 80 ? '.warn' : ''}`, { title: `${Math.round(it.ctxUsed / 1000)}k / ${Math.round(it.ctxMax / 1000)}k token` }, `${pct}% context`));
   }
   if (it.subs) out.push(h('span.run', `${it.subs} sub agent`));
+  // Prompt cache của Claude: còn bao lâu thì nguội (qua mốc, prompt kế tiếp ghi lại cả context).
+  if (it.status !== 'running' && it.cacheAt && !it.compacted) {
+    const ttl = (it.cacheTtl || 3600) * 1e3, left = it.cacheAt + ttl - Date.now();
+    out.push(left <= 0
+      ? h('span.warn', { title: 'Prompt cache expired — run /compact before the next prompt' }, 'cache cold')
+      : h(`span${left <= Math.min(5 * 60e3, ttl / 5) ? '.warn' : ''}`, { title: 'Prompt cache stays warm until then' }, `cache ${clock(left)}`));
+  }
   return out.flatMap((x, i) => (i ? [h('span', '·'), x] : [x]));
 }
 

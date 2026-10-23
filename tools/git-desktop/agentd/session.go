@@ -183,6 +183,11 @@ func ptyEnv(nodeID string) []string {
 		}
 		env = append(env, kv)
 	}
+	// App mở từ Finder/Dock không có LANG: pbcopy (Claude Code gọi khi copy) đọc byte UTF-8
+	// thành Mac Roman → "có" thành "c√≥". Terminal.app luôn đặt LANG; ta cũng vậy.
+	if !isWin && !hasLocale(env) {
+		env = append(env, "LANG=en_US.UTF-8")
+	}
 	parts := []string{}
 	for _, p := range append(extra, pathVal) {
 		if p != "" {
@@ -194,6 +199,16 @@ func ptyEnv(nodeID string) []string {
 		env = append(env, k+"="+v)
 	}
 	return env
+}
+
+func hasLocale(env []string) bool {
+	for _, kv := range env {
+		k, v, _ := strings.Cut(kv, "=")
+		if v != "" && (k == "LANG" || k == "LC_ALL" || k == "LC_CTYPE") {
+			return true
+		}
+	}
+	return false
 }
 
 func ptyStart(o startOpts) (map[string]any, error) {

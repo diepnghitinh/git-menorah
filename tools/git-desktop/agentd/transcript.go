@@ -180,9 +180,26 @@ type usage struct {
 	CacheRead   float64 `json:"cache_read_input_tokens"`
 	CacheCreate float64 `json:"cache_creation_input_tokens"`
 	Output      float64 `json:"output_tokens"`
+	CacheTTL    *struct {
+		H1 float64 `json:"ephemeral_1h_input_tokens"`
+		M5 float64 `json:"ephemeral_5m_input_tokens"`
+	} `json:"cache_creation"`
 }
 
 func (u *usage) total() float64 { return u.Input + u.CacheRead + u.CacheCreate + u.Output }
+
+// TTL (giây) của prompt cache mà request này ghi; 0 = request không ghi cache mới, chưa biết.
+func (u *usage) ttl() float64 {
+	switch {
+	case u.CacheTTL == nil:
+		return 0
+	case u.CacheTTL.H1 > 0:
+		return 3600
+	case u.CacheTTL.M5 > 0:
+		return 300
+	}
+	return 0
+}
 
 type claudeLine struct {
 	Type             string `json:"type"`
@@ -788,6 +805,81 @@ type tailInfo struct {
 	CtxUsed *float64 `json:"ctxUsed,omitempty"`
 	CtxMax  *float64 `json:"ctxMax,omitempty"`
 	LastAt  float64  `json:"lastAt,omitempty"`
+	// Prompt cache (chỉ Claude): request cuối gửi lúc CacheAt, cache sống CacheTTL giây kể từ đó.
+	// Compacted = đã /compact sau request cuối — cache cũ không còn dùng tới, khỏi đếm.
+	CacheAt   *float64 `json:"cacheAt,omitempty"`
+	CacheTTL  float64  `json:"cacheTtl,omitempty"`
+	Compacted bool     `json:"compacted,omitempty"`
+	userAt    float64  // dòng user mới nhất đã đọc — cho lần đọc nối sau
+}
+
+// ─── Prompt cache ───────────────────────────────────────────────────────────
+// Cache được làm mới khi request tới API, tức ngay sau dòng user (prompt / tool_result) đứng
+// trước phản hồi. Lấy giờ dòng user đó chứ không lấy giờ phản hồi: phản hồi dài viết xong sau
+// vài phút, tính theo nó thì báo trễ.
+
+type cacheScan struct {
+	userAt, assistAt, reqAt, ttl float64
+	compacted                    bool
+}
+
+func scanCache(lines [][]byte) cacheScan {
+	var c cacheScan
+	for i := len(lines) - 1; i >= 0; i-- {
+		var j claudeLine
+		if json.Unmarshal(lines[i], &j) != nil || j.IsSidechain {
+			continue
+		}
+		ts := parseTs(j.Timestamp)
+		switch {
+		case c.assistAt == 0 && (j.IsCompactSummary || j.Type == "system" && j.Subtype == "compact_boundary"):
+			c.compacted = true
+		case j.Type == "assistant" && j.Message != nil && j.Message.Usage != nil && j.Message.Model != "<synthetic>":
+			if c.assistAt == 0 {
+				c.assistAt = ts
+			}
+			if c.ttl == 0 {
+				c.ttl = j.Message.Usage.ttl()
+			}
+		case j.Type == "user":
+			if c.userAt == 0 {
+				c.userAt = ts
+			}
+			if c.assistAt != 0 && c.reqAt == 0 {
+				c.reqAt = ts
+			}
+		}
+		if c.compacted || c.reqAt != 0 && c.ttl != 0 {
+			break
+		}
+	}
+	return c
+}
+
+// Ghép kết quả quét vào info. `prevUser` = dòng user mới nhất của lần đọc trước (đoạn mới có
+// thể chỉ chứa phản hồi, còn prompt nằm ở đoạn cũ).
+func applyCache(info *tailInfo, c cacheScan, prevUser float64) {
+	if c.userAt != 0 {
+		info.userAt = c.userAt
+	}
+	if c.ttl != 0 {
+		info.CacheTTL = c.ttl
+	}
+	if c.compacted {
+		info.Compacted, info.CacheAt = true, nil
+		return
+	}
+	if c.assistAt == 0 {
+		return
+	}
+	at := c.reqAt
+	if at == 0 {
+		at = c.assistAt
+		if prevUser != 0 && prevUser <= c.assistAt {
+			at = prevUser
+		}
+	}
+	info.Compacted, info.CacheAt = false, f64(at)
 }
 
 var (
@@ -903,6 +995,9 @@ func transcriptTail(agent, sessionID string) tailInfo {
 		size = end
 		fresh := scanTail(agent, lines)
 		info = hit.info
+		if agent == "claude" {
+			applyCache(&info, scanCache(lines), hit.info.userAt)
+		}
 		if fresh.You != nil {
 			info.You, info.TurnAt = fresh.You, fresh.TurnAt
 		}
@@ -922,6 +1017,9 @@ func transcriptTail(agent, sessionID string) tailInfo {
 			lines, from, end := tailLines(f, st.Size(), win)
 			size = end
 			info = scanTail(agent, lines)
+			if agent == "claude" {
+				applyCache(&info, scanCache(lines), 0)
+			}
 			if info.You != nil || from == 0 {
 				break
 			}
