@@ -4,6 +4,124 @@ GitMenorah: changelog
 Newest release first.
 
 
+1.0.7 (2026-10-23)
+------------------
+
+New
+- AI Hub with an Inference Router (AI Hub in the left rail). It works with
+  Claude Code only; Codex and shells are never routed. Turn the router
+  on and give a project a router: Software Engineering (bug fixing, new code,
+  tests, performance, architecture, UI, review and security, DevOps, docs) or
+  AI Engineer (training and fine-tuning, data pipelines, AI-generated data,
+  LLM apps and agents, prompts, evals, data analysis, AI system design,
+  MLOps). Claude Code sessions opened from that project's canvas then talk to
+  a local proxy on 127.0.0.1, which forwards each request to your real
+  endpoint: ANTHROPIC_BASE_URL from ~/.claude/settings.json, the environment,
+  or api.anthropic.com (Upstream URL overrides it). Each sub-agent task other
+  than Explore is judged once by a small model, Claude Haiku 4.5 by default
+  or a provider from Settings ("Try the judge" tests it), and sorted into one
+  of the router's tasks. Every task can run on its own Claude model, e.g.
+  Opus for architecture and UI, Haiku for tests and docs; when Anthropic
+  refuses that model, the original request is sent again. The main loop,
+  side requests, Explore and safety checks pass through unchanged. Projects
+  without a router, and agents other than Claude Code, run directly as
+  before. A router assigned to a project applies to Claude sessions opened
+  after that; turning the router off takes effect from the next turn.
+- "Set target" on a task saves a provider and model for it ("saved · runs on
+  Claude"). The turns still run on Claude until protocol translation for
+  other providers is in.
+- Statistics, a tab inside AI Hub (Router | Statistics): a Flow diagram of
+  Claude Code → router → task → answering model, sized by turns, tokens or
+  estimated cost, for Today, 7 days, 30 days or All, and for all projects,
+  one project or "Outside Git Menorah". Every turn, judge turns included, is
+  stored in a local database in the app's data folder: router, task, model,
+  tokens, cost and time, no prompt text. "Delete data" clears it.
+- Claude Code outside the app can use the router too: AI Hub → "Claude Code
+  outside Git Menorah" → "Install into settings.json" points
+  ANTHROPIC_BASE_URL in ~/.claude/settings.json at the proxy, so Claude Code
+  in your own terminal or IDE goes through the router you choose there ("No
+  router" passes it through without logging). The original file is backed
+  up next to it; "Restore original" puts it back, or only the old
+  ANTHROPIC_BASE_URL when the file was edited after the install. While
+  installed, Claude Code needs GitMenorah to be running; the proxy keeps the
+  same address across restarts.
+- Settings in the left rail lists AI providers: OpenRouter, OpenAI, Google
+  Gemini, DeepSeek, Ollama, any OpenAI-compatible server (vLLM, LM Studio,
+  LiteLLM…) and TypeSafe (Jev, for the router judge only). Add provider tests
+  the connection before saving; each card shows its status, model count, last
+  check and what uses it. API keys are encrypted with the OS keychain and
+  never shown again, only their last characters; without a keychain the key
+  is not saved.
+- AI Hub and Settings are in English.
+- Update notices from GitHub Releases. 15 seconds after start and then every
+  6 hours the app checks github.com/diepnghitinh/git-menorah/releases; when a
+  newer version is out it shows its release notes with Download (the .dmg or
+  .zip for this Mac or PC, opened in the browser), Open Release Page, Later
+  and Skip This Version. GitMenorah → Check for Updates… (Help menu on Windows) checks right
+  away; turn the automatic check off in Help → Check for Updates
+  Automatically. Help → Release Notes opens the releases page. The app does
+  not install updates itself: builds are not signed, so download and replace
+  the app as before.
+- Drag a branch onto another branch in the Git tab to merge or rebase, e.g.
+  drag feat/… onto staging and choose "Merge feat/… into staging" or "Rebase
+  feat/… onto staging". Works with the branches in the sidebar and the branch
+  labels on the commit graph; a valid drop target is outlined. The command
+  runs in the worktree that has the branch checked out (merge: the target;
+  rebase: the dragged branch). If no worktree has it, the current worktree
+  switches to it first, and the confirmation says so. Merge conflicts in
+  another worktree open that worktree. Remote branches can be merged, not
+  rebased. The usual rules still apply: no merges into main / staging / prod
+  in gitflow repositories, no rebasing shared or already pushed branches.
+- Push any local branch from its right-click menu without switching to it:
+  "Push to origin/feat-x" when it has an upstream, otherwise "Push to origin"
+  (one item per remote), which also sets the upstream. A branch whose remote
+  copy was deleted gets a warning that the push creates it again.
+- Delete branches from the Git tab sidebar: right-click a local branch →
+  "Delete feat-x…", or a remote branch (or a local branch with an upstream)
+  → "Delete origin/feat-x from the remote…". The current branch, branches
+  checked out in a worktree and shared branches (develop, main, staging,
+  prod) cannot be deleted. When the branch has commits found on no other
+  branch, the confirmation lists how many with the SHA to get them back, and
+  needs a tick before Delete. Deleting the local branch keeps its remote
+  copy and the other way round.
+- Links between canvas nodes show arrows pointing at the node whose context
+  can be read: terminals read linked nodes with menorah-context, notes and
+  images cannot. Hover a link to see who reads whom.
+- Dark mode for the whole app. The color theme picked in the Git tab
+  (System, Light or Dark) now also applies to the Canvas, Projects, AI Hub
+  and Settings, and is remembered for the next start.
+
+Changes
+- "New branch…" and "New worktree…" stay at the bottom of the Branch menu
+  at the top of the Git tab; a long list of worktrees and branches scrolls
+  above them instead of pushing them out of sight.
+- The collapsed notch is narrower: 282 points instead of 328. It now fits the
+  real notch (185 points on a 14" / 16" MacBook) and the wings only take the
+  room the agent logo and the count need.
+
+Fixes
+- Double-click a branch in the Git tab sidebar, or a branch label on the
+  commit graph, to switch to it (a branch open in another worktree opens that
+  worktree). It used to do nothing: the first click selects the branch's tip
+  commit and redraws the list, so the browser never saw a double-click.
+- Pasting an image into a terminal or the Chat panel works again. With
+  Electron 44 the clipboard image reader was removed and ⌘V of a screenshot
+  failed silently; pasting an image onto the canvas was affected too.
+- Telegram "Copy Media" (and any copied image or file, e.g. from Finder) can
+  be pasted into a terminal: the file's path is typed in, so Claude Code reads
+  the image. Files from another app's temporary folder are copied to the
+  uploads folder first, because that app deletes them soon and macOS may keep
+  the agent from reading them. Plain text pastes as before.
+- The prompt cache chip on Claude nodes ("cold" or the countdown) no longer
+  blinks on and off. Clicking between nodes, typing or resizing makes Claude
+  Code redraw its screen, and that redraw counted as "running" for 1.5
+  seconds, which hid the chip. Output right after a key, focus change or
+  resize is now treated as a redraw. The status dot, the notch and the cache
+  notice no longer flash "running" for it either.
+- Commit details in the Git tab label the parent commits "parent" /
+  "parents" instead of the Vietnamese "cha".
+
+
 1.0.6 (2026-10-22)
 ------------------
 

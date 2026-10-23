@@ -14,7 +14,7 @@
 //
 // Renderer chỉ nói chuyện qua ipc `ws:*` (xem preload.cjs); handler từ chối frame khác trang app.
 
-const { ipcMain, BrowserWindow, dialog, shell, clipboard, nativeImage, screen, systemPreferences } = require('electron');
+const { ipcMain, BrowserWindow, dialog, shell, clipboard, nativeImage, nativeTheme, screen, systemPreferences } = require('electron');
 const { execFile } = require('node:child_process');
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
@@ -23,6 +23,7 @@ const os = require('node:os');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { createAgentd } = require('./agentd.cjs');
+const { createHub } = require('./ai-hub.cjs');
 
 const APP_ORIGIN = 'menorah://app';
 const HOME = os.homedir();
@@ -135,10 +136,20 @@ function onAgentdCrash() {
   sessions.clear();
 }
 
+let hub = null;
+
+// Project của phiên: project cửa sổ gửi đang mở (node mới có thể chưa kịp lưu), không thì tra canvas đã lưu.
+function projectOf(nodeId, sender) {
+  for (const [pid, wid] of owners) if (wid === sender.id) return pid;
+  return allNodes().find((x) => x.node.id === nodeId)?.project.id || null;
+}
+
 async function startSession(opts, sender) {
   const r = await agentd.call('pty-start', {
     nodeId: String(opts.nodeId || ''), agent: opts.agent || 'shell', cwd: typeof opts.cwd === 'string' ? opts.cwd : '',
     sessionId: opts.sessionId || '', cols: opts.cols | 0, rows: opts.rows | 0,
+    // Project được gán Inference Router (AI Hub) thì Claude Code gọi API qua proxy cục bộ.
+    settings: opts.agent === 'claude' ? hub?.claudeSettings(projectOf(opts.nodeId, sender)) || '' : '',
   });
   let s = sessions.get(opts.nodeId);
   if (!s) { s = { viewers: new Set(), sessionId: r.sessionId }; sessions.set(opts.nodeId, s); }
@@ -155,11 +166,13 @@ const killNodes = (ids) => { if (ids.length) agentd.send('pty-kill', { nodeIds: 
 
 // ─── Tệp thả vào ───────────────────────────────────────────────────────────
 // Ảnh kéo từ ô xem trước của macOS nằm ở TemporaryItems và bị xoá ngay sau đó — chép sang
-// uploads/ để agent đọc kịp. Ảnh không có đường dẫn (dán từ clipboard) ghi thẳng vào uploads/.
+// uploads/ để agent đọc kịp. "Copy Media" của Telegram cũng vậy: tệp nằm trong tmp/ ở
+// ~/Library/Containers của app khác, bị dọn sớm và agent có thể không được đọc (macOS bảo vệ dữ
+// liệu app khác). Ảnh không có đường dẫn (dán từ clipboard) ghi thẳng vào uploads/.
 function stamp() { const d = new Date(); const p = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`; }
 
 function stashPath(p) {
-  if (!p || !/[\\/](TemporaryItems|NSIRD_screencaptureui)[^\\/]*[\\/]/.test(p) && !p.includes(`${path.sep}T${path.sep}`)) return p;
+  if (!p || !/[\\/](TemporaryItems|NSIRD_screencaptureui|Containers)[^\\/]*[\\/]/.test(p) && !p.includes(`${path.sep}T${path.sep}`)) return p;
   try {
     fs.mkdirSync(dirs.uploads, { recursive: true });
     const dest = path.join(dirs.uploads, `${stamp()}-${path.basename(p).replace(/\s+/g, '-')}`);
@@ -336,6 +349,7 @@ function on(ch, fn) {
 
 // settings: { load, save } — userData/settings.json của main.cjs; giới hạn lưu ở khoá `limits`.
 async function setup({ app, gitOrigin, api, settings }) {
+  hub = createHub({ app, handle, log: (m) => console.warn(m), projects: () => loadProjects().projects });
   dirs = {
     root: path.join(app.getPath('userData'), 'workspace'),
     canvas: path.join(app.getPath('userData'), 'workspace', 'canvas'),
@@ -519,13 +533,26 @@ async function setup({ app, gitOrigin, api, settings }) {
     if (act === 'None') return;
     win.isMaximized() ? win.unmaximize() : win.maximize();
   });
+  // Chế độ màu chọn ở tab Git (System / Light / Dark) áp cho cả app: nativeTheme đổi
+  // prefers-color-scheme của mọi trang nên Canvas, AI Hub… theo luôn. Lưu lại để lần mở sau
+  // main.cjs đặt trước khi dựng cửa sổ, nền không loé sai màu.
+  on('ws:theme', (_e, mode) => {
+    if (!['auto', 'light', 'dark'].includes(mode)) return;
+    nativeTheme.themeSource = mode === 'auto' ? 'system' : mode;
+    if (settings?.load().theme !== mode) settings?.save({ theme: mode });
+  });
 
   // Tệp
   handle('ws:file-stash', (e, paths) => (paths || []).map(stashPath));
   handle('ws:file-save', (e, bytes, name) => saveBytes(bytes, name));
-  handle('ws:clipboard-image', () => {
-    const img = clipboard.readImage();
-    return img.isEmpty() ? null : saveBytes(img.toPNG(), 'clipboard.png');
+  // Electron 44 bỏ readImage(): clipboard chỉ còn read()/has() kiểu W3C. Ảnh TIFF (Preview,
+  // Telegram…) Chromium cũng đổi sẵn ra image/png.
+  handle('ws:clipboard-image', async () => {
+    for (const it of await clipboard.read()) {
+      if (!it.types.includes('image/png')) continue;
+      return saveBytes(new Uint8Array(await (await it.getType('image/png')).arrayBuffer()), 'clipboard.png');
+    }
+    return null;
   });
   handle('ws:shots', () => recentShots());
   handle('ws:reveal', (e, p) => { if (p && fs.existsSync(p)) shell.showItemInFolder(p); });
@@ -580,7 +607,7 @@ async function setup({ app, gitOrigin, api, settings }) {
 
   // Đóng stdin: agentd cho cây con đang bị hãm chạy lại, tắt mọi phiên rồi thoát. will-quit chứ
   // không phải before-quit: người dùng bấm Cancel ở hộp hỏi thoát thì phiên vẫn sống.
-  app.on('will-quit', () => agentd.stop());
+  app.on('will-quit', () => { agentd.stop(); hub.stop(); });
 }
 
 module.exports = {

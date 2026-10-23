@@ -20,6 +20,16 @@
     <span class="rail-lb">Canvas</span>
     <span id="rail-running" class="rail-badge" hidden></span>
   </button>
+  <div class="rail-fill"></div>
+  <button class="rail-btn" data-view="hub" title="AI Hub · Inference Router">
+    <svg class="i" viewBox="0 0 24 24"><circle cx="5" cy="12" r="2.2"/><circle cx="19" cy="5" r="2.2"/><circle cx="19" cy="12" r="2.2"/><circle cx="19" cy="19" r="2.2"/><path d="M7.2 12h9.6M7 11c4-1 6-6 9.8-6M7 13c4 1 6 6 9.8 6"/></svg>
+    <span class="rail-lb">AI Hub</span>
+  </button>
+  <button class="rail-btn" data-view="settings" title="Settings · AI providers">
+    <svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg>
+    <span class="rail-lb">Settings</span>
+  </button>
+  <div class="rail-bottom"></div>
 </nav>
 <div id="project-menu" class="menu" hidden></div>
 <div id="canvas-menu" class="menu" hidden></div>
@@ -29,7 +39,10 @@
   <section id="view-canvas" class="view">
     <div id="stage" tabindex="-1">
       <div id="world">
-        <svg id="links" width="1" height="1"></svg>
+        <svg id="links" width="1" height="1"><defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"/></marker>
+          <marker id="arrow-sel" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"/></marker>
+        </defs></svg>
         <div id="nodes"></div>
       </div>
     </div>
@@ -90,6 +103,8 @@
   <section id="view-git" class="view" hidden>
     <iframe id="git-frame" title="Git" allow="clipboard-write"></iframe>
   </section>
+  <section id="view-hub" class="view hub-view" hidden></section>
+  <section id="view-settings" class="view hub-view" hidden></section>
 </main>
 
 <div id="modal" class="modal" hidden></div>
@@ -102,6 +117,7 @@
 <script src="util.js"></script>
 <script src="chat.js"></script>
 <script src="canvas.js"></script>
+<script src="aihub.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

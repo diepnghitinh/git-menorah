@@ -19,6 +19,10 @@ import (
 const (
 	bufMax    = 512 * 1024 // bộ đệm thô mỗi phiên, để gắn lại xterm
 	runningMs = 1500       // có output trong khoảng này = "Đang chạy"
+	// Output tới trong khoảng này sau phím gõ / focus / đổi cỡ là TUI vẽ lại, không phải đang
+	// chạy: Claude Code vẽ lại ngay khi focus vào ra hay đổi cỡ — tính vào thì bấm qua lại giữa
+	// các node cũng thành "Đang chạy" 1,5s (chấm trạng thái nháy, đồng hồ cache ẩn hiện).
+	echoMs    = 400
 	flushWait = 8 * time.Millisecond
 )
 
@@ -48,6 +52,7 @@ type session struct {
 	startedAt float64
 	proc      ptyProc
 	lastOut   atomic.Int64
+	lastIn    atomic.Int64 // lúc ghi phím / đổi cỡ gần nhất — xem echoMs
 
 	mu        sync.Mutex
 	sessionID string
@@ -78,6 +83,9 @@ type startOpts struct {
 	SessionID string `json:"sessionId"`
 	Cols      int    `json:"cols"`
 	Rows      int    `json:"rows"`
+	// Tệp settings thêm cho Claude Code (--settings): AI Hub trỏ ANTHROPIC_BASE_URL về Inference
+	// Router cục bộ. Cờ thắng `env` trong ~/.claude/settings.json, biến môi trường thì không.
+	Settings string `json:"settings"`
 }
 
 var (
@@ -135,14 +143,18 @@ func newUUID() string {
 
 const claudeFlags = "--permission-mode auto"
 
-func agentCommand(agent, sessionID string) string {
+func agentCommand(agent, sessionID, settings string) string {
 	switch agent {
 	case "claude":
+		flags := claudeFlags
+		if settings != "" {
+			flags += " --settings " + quoteArg(settings)
+		}
 		// Phiên gắn với node bằng session id cố định: tắt máy mở lại vẫn --resume đúng phiên.
 		if claudeTranscript(sessionID) != "" {
-			return "claude " + claudeFlags + " --resume " + sessionID
+			return "claude " + flags + " --resume " + sessionID
 		}
-		return "claude " + claudeFlags + " --session-id " + sessionID
+		return "claude " + flags + " --session-id " + sessionID
 	case "codex":
 		if sessionID != "" {
 			return "codex resume " + sessionID
@@ -150,6 +162,14 @@ func agentCommand(agent, sessionID string) string {
 		return "codex"
 	}
 	return ""
+}
+
+// Nháy đơn cho sh và PowerShell: đường dẫn userData có dấu cách ("Application Support").
+func quoteArg(s string) string {
+	if isWin {
+		return "'" + strings.ReplaceAll(s, "'", "''") + "'"
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // App mở từ một phiên agent (lúc chạy thử từ mã nguồn) thì đừng để biến của phiên đó lọt vào
@@ -220,7 +240,7 @@ func ptyStart(o startOpts) (map[string]any, error) {
 	sessMu.Unlock()
 	if s != nil {
 		if o.Cols > 0 && o.Rows > 0 {
-			_ = s.proc.Resize(o.Cols, o.Rows)
+			s.resize(o.Cols, o.Rows)
 		}
 		s.mu.Lock()
 		defer s.mu.Unlock()
@@ -244,7 +264,7 @@ func ptyStart(o startOpts) (map[string]any, error) {
 	}
 	cols, rows = max(20, cols), max(5, rows)
 
-	proc, err := spawnPty(agentCommand(o.Agent, sid), cwd, ptyEnv(o.NodeID), cols, rows)
+	proc, err := spawnPty(agentCommand(o.Agent, sid, o.Settings), cwd, ptyEnv(o.NodeID), cols, rows)
 	if err != nil {
 		return nil, err
 	}
@@ -269,7 +289,9 @@ func (s *session) writeLoop() {
 	for {
 		select {
 		case b := <-s.writes:
-			if _, err := s.proc.Write(b); err != nil {
+			_, err := s.proc.Write(b)
+			s.lastIn.Store(time.Now().UnixMilli())
+			if err != nil {
 				return
 			}
 		case <-s.done:
@@ -290,8 +312,11 @@ func (s *session) write(data string) {
 	}
 }
 
-func (s *session) resize(cols, rows int) { _ = s.proc.Resize(cols, rows) }
-func (s *session) kill()                 { s.proc.Kill() }
+func (s *session) resize(cols, rows int) {
+	_ = s.proc.Resize(cols, rows)
+	s.lastIn.Store(time.Now().UnixMilli())
+}
+func (s *session) kill() { s.proc.Kill() }
 
 // Đọc PTY → bộ đệm + gom 8ms rồi phát "data"; tiến trình thoát → phát nốt rồi "exit".
 func (s *session) run() {
@@ -313,7 +338,9 @@ func (s *session) run() {
 						s.buf = append([]byte(nil), keepTail(s.buf, bufMax*3/4)...)
 					}
 					s.mu.Unlock()
-					s.lastOut.Store(time.Now().UnixMilli())
+					if now := time.Now().UnixMilli(); now-s.lastIn.Load() > echoMs {
+						s.lastOut.Store(now)
+					}
 					chunks <- c
 				}
 			}

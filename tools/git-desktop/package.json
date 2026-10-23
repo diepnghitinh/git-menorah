@@ -1,7 +1,7 @@
 {
   "name": "gitmenorah",
   "productName": "GitMenorah",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "GitMenorah — an infinite canvas for Claude Code and Codex agents, worktree-first Git, and a native terminal in one desktop app.",
   "license": "MIT",
   "private": true,

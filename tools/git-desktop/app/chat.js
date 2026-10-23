@@ -35,12 +35,12 @@ class ChatView {
     });
     this.input.addEventListener('input', () => this.autosize());
     this.input.addEventListener('paste', async (e) => {
-      const hasText = e.clipboardData.types.includes('text/plain');
-      const file = [...e.clipboardData.files].find((f) => f.type.startsWith('image/'));
-      if (!file || hasText) return;
+      const dt = e.clipboardData;
+      const real = [...dt.files].some((f) => window.menorah.pathOf(f));
+      if (!dt.files.length || dt.types.includes('text/plain') && !real) return;
       e.preventDefault();
-      const p = window.menorah.pathOf(file) || await window.menorah.saveFile(new Uint8Array(await file.arrayBuffer()), file.name || 'clipboard.png');
-      this.attach([p]);
+      const paths = await droppedPaths(dt);
+      if (paths.length) this.attach(paths);
     });
   }
 

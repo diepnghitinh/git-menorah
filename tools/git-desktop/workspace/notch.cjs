@@ -8,8 +8,8 @@
 
 const { BrowserWindow, screen, ipcMain } = require('electron');
 
-const NOTCH_W = 200;   // tai thỏ MacBook 14"/16" ở độ phân giải mặc định ~185pt, chừa mép
-const WING_W = 64;     // mỗi cánh hai bên tai thỏ
+const NOTCH_W = 190;   // tai thỏ MacBook 14"/16" ở độ phân giải mặc định 185pt (NSScreen.auxiliaryTopLeftArea), chừa mép
+const WING_W = 46;     // mỗi cánh hai bên tai thỏ: vừa đủ logo agent + vạch đang chạy / số phiên
 const OPEN_W = 580;
 
 function geometry() {

@@ -24,6 +24,7 @@ const { pathToFileURL } = require('node:url');
 const workspace = require('./workspace/backend.cjs');
 const { createNotch } = require('./workspace/notch.cjs');
 const { createCacheWatch } = require('./workspace/cache-watch.cjs');
+const { createUpdateCheck } = require('./workspace/update-check.cjs');
 
 const SERVER = [
   path.join(__dirname, 'server', 'tools', 'git-server.mjs'),
@@ -250,6 +251,9 @@ function setCacheNotify(on) {
   if (on) cacheWatch.start(); else cacheWatch.stop();
 }
 
+// Báo bản mới từ GitHub Releases (workspace/update-check.cjs). Mặc định tự kiểm.
+const updates = createUpdateCheck({ app, settings: { load: loadSettings, save: saveSettings }, onAuto: () => buildMenu() });
+
 // Nút Mở ở tai thỏ: đưa cửa sổ đang giữ project lên trước; chưa cửa sổ nào giữ thì dùng cửa
 // sổ app gần nhất (trang tự mở project), không còn cửa sổ nào thì mở mới.
 function goNode(it) {
@@ -322,6 +326,7 @@ function buildMenu() {
       role: 'appMenu',
       submenu: [
         { role: 'about' },
+        { label: 'Check for Updates…', click: () => updates.check() },
         { type: 'separator' },
         { label: 'Settings…', accelerator: 'CmdOrCtrl+,', click: toFocused({ type: 'settings' }) },
         { label: 'Accounts…', click: toFocused({ type: 'settings', tab: 'accounts' }) },
@@ -381,6 +386,15 @@ function buildMenu() {
       ],
     },
     { role: 'windowMenu' },
+    {
+      role: 'help',
+      submenu: [
+        ...(mac ? [] : [{ label: 'Check for Updates…', click: () => updates.check() }]),
+        { label: 'Check for Updates Automatically', type: 'checkbox', checked: updates.auto(), click: (item) => updates.setAuto(item.checked) },
+        { type: 'separator' },
+        { label: 'Release Notes', click: () => shell.openExternal('https://github.com/diepnghitinh/git-menorah/releases') },
+      ],
+    },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
@@ -397,6 +411,8 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   app.whenReady().then(async () => {
+    // Chế độ màu người dùng chọn ở tab Git (workspace/backend.cjs lưu), đặt trước khi dựng cửa sổ.
+    nativeTheme.themeSource = { light: 'light', dark: 'dark' }[loadSettings().theme] || 'system';
     if (!SERVER) {
       dialog.showErrorBox('GitMenorah', 'git-server.mjs is missing from this build — rebuild with tools/build-git.sh.');
       return app.quit();
@@ -423,6 +439,7 @@ if (!app.requestSingleInstanceLock()) {
     setNotch(loadSettings().notch !== false);
     setCacheNotify(loadSettings().cacheNotify !== false);
     buildMenu();
+    updates.start();
     const win = createWindow(undefined, 0);
     win.webContents.once('did-finish-load', () => firstRunHint(win));
 

@@ -278,6 +278,7 @@
   .gk-item:hover{background:var(--hover)}
   .gk-item.sel{background:var(--accent-soft)}
   .gk-item.cur{font-weight:650}
+  .gk-item.gk-drop,.gk-ref.gk-drop{outline:2px solid var(--accent);outline-offset:-2px;background:var(--accent-soft)}
   .gk-item .nm{overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
   .gk-item > .gk-ic{width:13px;height:13px;color:var(--faint)}
   .gk-item > .gk-ic.gk-tw{width:10px;height:10px}
@@ -526,6 +527,9 @@
   .gk-menu .it .sb{color:var(--faint);font-size:11.5px;font-family:var(--mono);flex:none;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .gk-menu .it .ck{width:14px;flex:none;color:var(--accent)}
   .gk-menu hr{border:none;border-top:1px solid var(--border);margin:4px 2px}
+  .gk-menu.pinned{display:flex;flex-direction:column;overflow:hidden}
+  .gk-menu.pinned .sc{flex:1 1 auto;min-height:0;overflow:auto}
+  .gk-menu.pinned .ft{flex:none;border-top:1px solid var(--border);margin-top:4px;padding-top:4px}
   .gk-menu .hd{padding:5px 10px 3px;font-size:10.5px;color:var(--faint);font-weight:700;text-transform:uppercase;letter-spacing:.05em;
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
@@ -743,7 +747,10 @@ function setTheme(m) {
 window.onThemeChange = () => {
   gkRenderBar();
   gtRetheme();
+  mnTheme();
 };
+// Trong app GitMenorah: báo chế độ lên app cha để Canvas cùng sáng / tối với tab Git.
+function mnTheme() { if (window.parent !== window) mnPost({ type: 'menorah:theme', mode: themeMode() }); }
 
 // ─── Tab Git ───────────────────────────────────────────────────────────────
 // Bố cục học từ GitKraken: thanh công cụ · thanh trái (nhánh, worktree, stash, submodule) ·
@@ -755,6 +762,7 @@ window.onThemeChange = () => {
 const GIT_SEL = 'gitmenorah-git-sel';
 const GIT_UI = 'gitmenorah-git-ui';
 const GIT_QUICK = new Set(['fetch', 'stage', 'unstage']);
+const GK_SHARED = /^(develop|main|master|staging|prod|production)$/;
 const GK_PULL = { ff: 'fast-forward', merge: 'merge', rebase: 'rebase' };
 const GK_ROW = 28, GK_LANE = 14, GK_REFW = 200;
 const GK_COLORS = ['#1f6feb', '#d4549b', '#16a34a', '#e8833a', '#7c5cd6', '#0e9fb0', '#b45309', '#64748b'];
@@ -1129,7 +1137,7 @@ function gkRefs(str) {
 function gkRefsHtml(str, color) {
   const refs = gkRefs(str);
   if (!refs.length) return '';
-  const pill = (x) => `<span class="gk-ref ${x.cur ? 'cur' : ''} ${x.kind === 'tag' ? 'tag' : ''}" style="--c:${color}" data-ref="${esc(x.name)}" data-kind="${x.kind}"
+  const pill = (x) => `<span class="gk-ref ${x.cur ? 'cur' : ''} ${x.kind === 'tag' ? 'tag' : ''}" style="--c:${color}" data-ref="${esc(x.name)}" data-kind="${x.kind}" ${x.kind === 'local' || x.kind === 'remote' ? 'draggable="true"' : ''}
     title="${esc([x.name, ...x.also.filter((a) => a !== x.name)].join(' · '))}">${x.kind === 'tag' ? ic('tag') : x.cur ? ic('check') : ''}<span>${esc(x.name)}</span>${x.also.length ? ic('cloud') : ''}</span>`;
   const more = refs.length - 1;
   return pill(refs[0]) + (more ? `<span class="gk-ref-more" title="${esc(refs.slice(1).map((x) => x.name).join('\n'))}">+${more}</span>` : '');
@@ -1290,9 +1298,8 @@ function gkWtMenu(b) {
     '-',
     { hd: 'Switch branch in this tree' },
     ...d.branches.local.slice(0, 15).map(gkSwitchItem),
-    '-',
-    { label: 'New branch…', disabled: gitBusy || !!d.readOnly, act: () => gkBranchDialog({}) },
-    { label: 'New worktree…', disabled: gitBusy || !!d.readOnly, act: () => gkBranchDialog({ wtOnly: true }) },
+    { label: 'New branch…', pin: true, disabled: gitBusy || !!d.readOnly, act: () => gkBranchDialog({}) },
+    { label: 'New worktree…', pin: true, disabled: gitBusy || !!d.readOnly, act: () => gkBranchDialog({ wtOnly: true }) },
   ]);
 }
 
@@ -1304,6 +1311,14 @@ function gkPush(at) {
   gitAct('push');
 }
 
+// Đẩy một nhánh cục bộ bất kỳ, không cần switch: có upstream thì đẩy lên đó, chưa có thì chọn
+// remote (đặt luôn upstream, -u).
+function gkPushItems(b, lock) {
+  const d = gitD, extra = b.name === d.status.branch ? {} : { branch: b.name }, off = lock || !d.canPush;
+  if (b.upstream) return [{ label: `Push to ${b.upstream}`, disabled: off, act: () => gitAct('push', extra) }];
+  return d.remotes.map((rm) => ({ label: `Push to ${rm}`, sub: `new ${rm}/${b.name}`, disabled: off, act: () => gitAct('push', { ...extra, remote: rm }) }));
+}
+
 function gkBranchMenu(e, name, remote) {
   const d = gitD, cur = d.status.branch, lock = gitBusy || !!d.readOnly;
   const b = !remote && d.branches.local.find((x) => x.name === name);
@@ -1312,7 +1327,7 @@ function gkBranchMenu(e, name, remote) {
   gitMenu(e, [
     { hd: name },
     isCur && { label: `Pull · ${GK_PULL[gitUi.pull]}`, disabled: lock, act: () => gitAct('pull', { mode: gitUi.pull }) },
-    isCur && { label: 'Push', disabled: lock || !d.canPush, act: () => gkPush(e) },
+    ...(b ? gkPushItems(b, lock) : []),
     held && { label: 'Open the worktree holding this branch', act: () => gkSelectWtPath(b.wtPath) },
     !isCur && !held && { label: `Switch to ${remote ? name.slice((gkRemoteOf(name) || '').length + 1) : name}`, disabled: lock, act: () => gitAct('switch', { branch: name }) },
     !isCur && cur && { label: `Merge ${name} into ${cur}`, disabled: lock, act: () => gitAct('merge', { branch: name, ff: false }) },
@@ -1320,6 +1335,43 @@ function gkBranchMenu(e, name, remote) {
     '-',
     { label: `New branch from ${name}…`, disabled: lock, act: () => gkBranchDialog({ base: name }) },
     { label: 'Copy branch name', act: () => copy(name, 'Branch name copied') },
+    '-',
+    // Nhánh dùng chung (develop, main, staging…) không xoá từ đây — server cũng chặn.
+    b && !GK_SHARED.test(name) && { label: `Delete ${name}…`, danger: true, disabled: lock || isCur || !!b.wtPath,
+      title: isCur ? 'This is the current branch — switch to another one first' : b.wtPath ? 'Checked out in a worktree' : '',
+      act: () => gitAct('delete-branch', { branch: name }) },
+    b?.upstream && b.track !== '[gone]' && !GK_SHARED.test(b.upstream.slice((gkRemoteOf(b.upstream) || '').length + 1))
+      && d.branches.remote.some((x) => x.name === b.upstream) && {
+      label: `Delete ${b.upstream} from the remote…`, danger: true, disabled: lock, act: () => gitAct('delete-remote', { branch: b.upstream }) },
+    remote && !GK_SHARED.test(name.slice((gkRemoteOf(name) || '').length + 1)) && { label: `Delete ${name} from the remote…`, danger: true, disabled: lock, act: () => gitAct('delete-remote', { branch: name }) },
+  ]);
+}
+
+// Kéo nhánh thả lên nhánh khác (cây bên trái hay nhãn nhánh trên đồ thị): chọn merge hay rebase.
+// Lệnh chạy ở worktree đang giữ nhánh phải đứng ở HEAD (đích của merge, nhánh bị rebase);
+// chưa worktree nào giữ thì server switch worktree đang xem sang nhánh đó trước.
+function gkWtOfBranch(name) {
+  const d = gitD, b = d.branches.local.find((x) => x.name === name);
+  if (!b?.wtPath) return null;
+  if (b.wtPath === d.dir) return gitSel.wt || '';
+  if (b.wtPath === d.mainPath) return '';
+  return d.worktrees.find((w) => w.path === b.wtPath)?.rel ?? false;   // false: ngoài .worktrees/
+}
+
+function gkDropAct(op, head, extra) {
+  const at = gkWtOfBranch(head);
+  if (at === false) return toast(`${head} is checked out outside .worktrees/ — run this from a terminal there.`);
+  if (at === null) return gitAct(op, { ...extra, [op === 'merge' ? 'into' : 'from']: head });
+  gitAct(op, { ...extra, ...(at !== (gitSel.wt || '') ? { wt: at, away: true } : {}) });
+}
+
+function gkDropMenu(e, src, remote, dst) {
+  const lock = gitBusy || !!gitD.readOnly;
+  gitMenu(e, [
+    { hd: `${src} → ${dst}` },
+    { label: `Merge ${src} into ${dst}`, disabled: lock, act: () => gkDropAct('merge', dst, { branch: src, ff: false }) },
+    // Nhánh remote không rebase được — chỉ merge.
+    !remote && { label: `Rebase ${src} onto ${dst}`, disabled: lock, act: () => gkDropAct('rebase', src, { branch: dst }) },
   ]);
 }
 
@@ -1360,13 +1412,19 @@ function gitMenu(at, items) {
   const acts = [];
   const m = document.createElement('div');
   m.className = 'gk-menu';
-  m.innerHTML = items.map((it) => {
+  const html = (xs) => xs.map((it) => {
     if (it === '-') return '<hr>';
     if (it.hd) return `<div class="hd">${esc(it.hd)}</div>`;
     acts.push(it);
     return `<button class="it ${it.danger ? 'danger' : ''}" data-i="${acts.length - 1}" ${it.disabled ? 'disabled' : ''} ${it.title ? `title="${esc(it.title)}"` : ''}>
       ${hasCk ? `<span class="ck">${it.check ? ic('check') : ''}</span>` : ''}<span class="lb">${it.html || esc(it.label)}</span>${it.sub ? `<span class="sb">${esc(it.sub)}</span>` : ''}</button>`;
   }).join('').replace(/^(<hr>)+|(<hr>)+$/g, '');
+  // Mục `pin` đứng yên ở đáy menu, phần trên cuộn — danh sách nhánh dài không đẩy chúng khuất.
+  const pin = items.filter((it) => it.pin);
+  if (pin.length) {
+    m.classList.add('pinned');
+    m.innerHTML = `<div class="sc">${html(items.filter((it) => !it.pin))}</div><div class="ft">${html(pin)}</div>`;
+  } else m.innerHTML = html(items);
   document.body.appendChild(m);
   const r = at.getBoundingClientRect ? at.getBoundingClientRect() : { left: at.clientX, top: at.clientY, bottom: at.clientY };
   let x = r.left, y = r.bottom + 4;
@@ -1421,8 +1479,8 @@ function gkRenderSide() {
     const b = it.b, held = !remote && b.wtPath && b.wtPath !== d.dir, isCur = !remote && b.name === cur;
     const [a, bh] = trackAB(b.track);
     const tip = []
-      .concat(b.name, !remote && b.upstream ? `tracking ${b.upstream}` : [], held ? `open at ${b.wtPath}` : [], 'Double-click to switch · right-click for more');
-    return `<div class="gk-item ${isCur ? 'cur' : ''} ${gitTips.get(b.name) && gitTips.get(b.name) === gitPick ? 'sel' : ''}" data-br="${esc(b.name)}" ${remote ? 'data-remote="1"' : ''}
+      .concat(b.name, !remote && b.upstream ? `tracking ${b.upstream}` : [], held ? `open at ${b.wtPath}` : [], 'Double-click to switch · drag onto another branch to merge or rebase · right-click for more');
+    return `<div class="gk-item ${isCur ? 'cur' : ''} ${gitTips.get(b.name) && gitTips.get(b.name) === gitPick ? 'sel' : ''}" data-br="${esc(b.name)}" ${remote ? 'data-remote="1"' : ''} draggable="true"
       style="padding-left:${28 + depth * 14}px" title="${esc(tip.join('\n'))}">${ic(isCur ? 'check' : 'branch')}<span class="nm">${esc(it.rest)}</span>${
       b.track === '[gone]' ? '<span class="w">remote gone</span>' : abMini(a, bh)}${held ? ic('folder', 'wtmark') : ''}</div>`;
   };
@@ -1593,6 +1651,7 @@ if (window.parent !== window) {
   }
   $('gkBar').addEventListener('dblclick', (e) => { if (gkFree(e)) mnPost({ type: 'menorah:win-zoom' }); });
   mnPost({ type: 'menorah:ready' });
+  mnTheme();
 }
 
 // ── Terminal ở khay dưới (chỉ trong GitMenorah) ──
@@ -1892,7 +1951,7 @@ function gkDescHtml() {
   const files = inf.files.map((f) => ({ path: f.path, from: f.from, st: f.st[0] }));
   return `${gkBanners()}<div class="gk-info">
       <div class="sha">${stash ? `<b>${esc(stash.ref)}</b> ·` : 'commit'} <code>${sha.slice(0, 8)}</code><button class="link" data-copy="${sha}">Copy</button>
-        ${inf.parents.length ? `<span>· cha</span>${inf.parents.map((p) => `<code class="par" data-par="${p}" title="Xem commit cha">${p.slice(0, 7)}</code>`).join(' ')}` : ''}</div>
+        ${inf.parents.length ? `<span>· ${inf.parents.length > 1 ? 'parents' : 'parent'}</span>${inf.parents.map((p) => `<code class="par" data-par="${p}" title="Open the parent commit">${p.slice(0, 7)}</code>`).join(' ')}` : ''}</div>
       <div class="subj">${esc(inf.subject)}</div>
       ${inf.body ? `<div class="body">${esc(inf.body)}</div>` : ''}
       <div class="auth"><span class="gk-av" style="background:${gkAvColor(inf.author)}">${esc(gkInitials(inf.author))}</span>
@@ -2734,14 +2793,15 @@ async function gitConfirm(plan, op, body) {
     ${p.alt ? `<div class="dlg-alt"><span>${esc(p.alt.why)}</span><button type="button" id="dlgAlt">${esc(p.alt.label)}</button></div>` : ''}
     ${p.ack ? `<label class="gd-check"><input type="checkbox" id="dlgAck" /><span>${esc(p.ack)}</span></label>` : ''}`);
   const OK = { abort: 'Abort', commit: 'Commit', checkout: 'Checkout', revert: 'Revert', stash: 'Stash', pop: 'Pop', push: 'Push', pull: 'Pull', merge: 'Merge', rebase: 'Rebase',
-    ship: plan.title.startsWith('Commit') ? 'Commit & merge' : 'Merge', 'remove-wt': 'Remove', discard: 'Discard' };
+    ship: plan.title.startsWith('Commit') ? 'Commit & merge' : 'Merge', 'remove-wt': 'Remove', discard: 'Discard',
+    'delete-branch': 'Delete', 'delete-remote': 'Delete' };
   let cur = plan;
   const ff = op === 'merge' ? `<label class="gd-check"><input type="checkbox" id="dlgFF" ${body.ff ? 'checked' : ''} />
     <span>Allow fast-forward — default is <code>--no-ff</code>, which keeps a merge commit as gitflow expects</span></label>` : '';
   const ok = await gitDialog({
     title: plan.block ? 'Cannot run' : plan.title,
     html: `<div id="dlgPlan">${view(plan)}</div>${ff}`,
-    ok: OK[op] || 'Run', okClass: op === 'abort' || op === 'remove-wt' || op === 'discard' ? 'danger' : 'primary',
+    ok: OK[op] || 'Run', okClass: ['abort', 'remove-wt', 'discard', 'delete-branch', 'delete-remote'].includes(op) ? 'danger' : 'primary',
     cancel: plan.block ? 'Close' : 'Cancel', hideOk: !!plan.block,
     mount: (root, okB) => {
       let busy = false;
@@ -2790,7 +2850,7 @@ async function gitConfirm(plan, op, body) {
 // rồi merge nhánh vào develop tại worktree đang giữ develop. Server soát luật và hiện lệnh
 // ở hộp xác nhận như mọi thao tác ghi khác.
 function gkShipItem(rel, br) {
-  const shared = !br || br === 'detached' || /^(develop|main|master|staging|prod|production)$/.test(br);
+  const shared = !br || br === 'detached' || GK_SHARED.test(br);
   const dev = gitD.branches.local.find((b) => b.name === 'develop');
   return {
     label: 'Commit & merge into develop…', act: () => gkShipDialog(rel, br),
@@ -2849,7 +2909,7 @@ async function gkShipDialog(rel, branch) {
 // tiến trình đang chạy trong thư mục, commit chỉ có ở nhánh này.
 async function gkRemoveWtDialog(rel, branch, path) {
   const name = wtShort(rel);
-  const canDel = branch && branch !== 'detached' && !/^(develop|main|master|staging|prod|production)$/.test(branch);
+  const canDel = branch && branch !== 'detached' && !GK_SHARED.test(branch);
   let del = canDel;
   const ok = await gitDialog({
     title: `Remove worktree ${name}`, ok: 'Review commands',
@@ -3327,7 +3387,7 @@ async function gitExec(body) {
     else if (!quiet) toast(`${res.title} — done`);
     if (res.ok && (body.op === 'commit' || body.op === 'ship')) { delete gitMsgs[`${body.repo}|${body.wt}`]; gitPick = null; }
     // Merge vào develop vướng xung đột: mở worktree develop để sửa rồi Continue (hoặc Abort).
-    if (res.conflictWt != null) { gkSelect(body.repo, res.conflictWt); toast('Merge into develop has conflicts — fix them here, then Continue or Abort'); }
+    if (res.conflictWt != null) { gkSelect(body.repo, res.conflictWt); toast(`${res.title} has conflicts — fix them here, then Continue or Abort`); }
     if (res.ok && body.op === 'create' && res.newWt) { gitSel = { repo: body.repo, wt: res.newWt }; gitSaveSel(); }
     // Worktree vừa gỡ (kể cả khi bước xoá nhánh sau đó lỗi): đang xem nó thì về cây chính.
     if (res.removedWt) {
@@ -3460,15 +3520,14 @@ $('gkTree').addEventListener('click', (e) => {
   const st = e.target.closest('[data-stash]');
   if (st) return gkPickSha(st.dataset.stash);
   const b = e.target.closest('[data-br]');
-  if (b) {
+  // Nhấp đúp = switch. Nhấp đầu chọn commit đầu nhánh → cây vẽ lại, phần tử bị thay nên trình
+  // duyệt không bắn dblclick; đếm nhấp (e.detail) thì vẫn còn.
+  if (b && e.detail === 2) return gkSwitchTo(b.dataset.br, !!b.dataset.remote);
+  if (b && e.detail === 1) {
     const sha = gitTips.get(b.dataset.br);
     if (sha) gkPickSha(sha, true);
     else toast('Branch tip is outside the loaded part of the graph');
   }
-});
-$('gkTree').addEventListener('dblclick', (e) => {
-  const b = e.target.closest('[data-br]');
-  if (b) gkSwitchTo(b.dataset.br, !!b.dataset.remote);
 });
 $('gkTree').addEventListener('contextmenu', (e) => {
   const w = e.target.closest('.gk-item[data-wt]');
@@ -3500,13 +3559,47 @@ $('gkTree').addEventListener('contextmenu', (e) => {
   }
 });
 
+// Kéo thả nhánh. Kiểu dữ liệu riêng để tệp kéo từ Finder không bị coi là nhánh.
+const GK_DRAG = 'application/x-gk-branch';
+let gkDrag = null, gkDropEl = null;
+const gkBrOf = (el) => {
+  const b = el?.closest?.('#gkTree [data-br], #gkRows .gk-ref[data-kind="local"], #gkRows .gk-ref[data-kind="remote"]');
+  return b && { el: b, name: b.dataset.br || b.dataset.ref, remote: !!b.dataset.remote || b.dataset.kind === 'remote' };
+};
+const gkDropMark = (el) => { if (gkDropEl === el) return; gkDropEl?.classList.remove('gk-drop'); gkDropEl = el; el?.classList.add('gk-drop'); };
+const gkDropTo = (e) => { const x = gkDrag && e.dataTransfer.types.includes(GK_DRAG) && gkBrOf(e.target); return x && !x.remote && x.name !== gkDrag.name ? x : null; };
+for (const box of [$('gkTree'), $('gkRows')]) {
+  box.addEventListener('dragstart', (e) => {
+    const x = gkBrOf(e.target);
+    if (!x) return;
+    gkDrag = x;
+    gitMenuClose();
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData(GK_DRAG, x.name);
+    e.dataTransfer.setData('text/plain', x.name);
+  });
+  box.addEventListener('dragover', (e) => {
+    const x = gkDropTo(e);
+    gkDropMark(x?.el || null);
+    if (x) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }
+  });
+  box.addEventListener('dragleave', (e) => { if (!box.contains(e.relatedTarget)) gkDropMark(null); });
+  box.addEventListener('drop', (e) => {
+    const x = gkDropTo(e), src = gkDrag;
+    gkDropMark(null); gkDrag = null;
+    if (!x) return;
+    e.preventDefault();
+    gkDropMenu(e, src.name, src.remote, x.name);
+  });
+}
+document.addEventListener('dragend', () => { gkDrag = null; gkDropMark(null); });
+
 $('gkRows').addEventListener('click', (e) => {
-  const r = e.target.closest('.gk-row');
-  if (r) gkPickSha(r.dataset.sha);
-});
-$('gkRows').addEventListener('dblclick', (e) => {
+  // Nhấp đúp nhãn nhánh = switch (đếm nhấp như cây bên trái: hàng có thể đã vẽ lại sau nhấp đầu).
   const p = e.target.closest('.gk-ref');
-  if (p && (p.dataset.kind === 'local' || p.dataset.kind === 'remote')) gkSwitchTo(p.dataset.ref, p.dataset.kind === 'remote');
+  if (e.detail === 2 && p && (p.dataset.kind === 'local' || p.dataset.kind === 'remote')) return gkSwitchTo(p.dataset.ref, p.dataset.kind === 'remote');
+  const r = e.target.closest('.gk-row');
+  if (r && e.detail === 1) gkPickSha(r.dataset.sha);
 });
 $('gkRows').addEventListener('contextmenu', (e) => {
   const p = e.target.closest('.gk-ref');

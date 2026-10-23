@@ -50,6 +50,8 @@ contextBridge.exposeInMainWorld('menorah', {
   // Header tab Git (trong iframe) dời cửa sổ thay cho -webkit-app-region.
   winDrag: (phase) => ipcRenderer.send('ws:win-drag', phase),
   winZoom: () => ipcRenderer.send('ws:win-zoom'),
+  // Chế độ màu của tab Git: 'auto' | 'light' | 'dark'.
+  setTheme: (mode) => ipcRenderer.send('ws:theme', mode),
   // Mức zoom của trang (⌘+ / ⌘−) để rail giữ nguyên cỡ.
   zoomFactor: () => webFrame.getZoomFactor(),
 
@@ -64,6 +66,19 @@ contextBridge.exposeInMainWorld('menorah', {
   clone: (body) => ipcRenderer.invoke('ws:clone', body),
   cloneStatus: (job) => ipcRenderer.invoke('ws:clone-status', job),
   pickDir: (opts) => ipcRenderer.invoke('ws:pick-dir', opts),
+
+  // AI Hub: nhà cung cấp (khóa API không bao giờ đọc ngược về đây), Inference Router, báo cáo SQLite.
+  hub: () => ipcRenderer.invoke('ws:hub-state'),
+  hubProviderSave: (x) => ipcRenderer.invoke('ws:hub-provider-save', x),
+  hubProviderTest: (id) => ipcRenderer.invoke('ws:hub-provider-test', id),
+  hubProviderRemove: (id) => ipcRenderer.invoke('ws:hub-provider-remove', id),
+  hubRouterSave: (x) => ipcRenderer.invoke('ws:hub-router-save', x),
+  hubReport: (days, project) => ipcRenderer.invoke('ws:hub-report', days, project),
+  hubReportClear: () => ipcRenderer.invoke('ws:hub-report-clear'),
+  // Ghi / trả lại ~/.claude/settings.json (ANTHROPIC_BASE_URL → proxy của Git Menorah).
+  hubClaudeInstall: () => ipcRenderer.invoke('ws:hub-claude-install'),
+  hubClaudeRestore: () => ipcRenderer.invoke('ws:hub-claude-restore'),
+  hubJudgeTest: (prompt, router) => ipcRenderer.invoke('ws:hub-judge-test', prompt, router),
 
   onCommand: listeners('ws:command'),
 });

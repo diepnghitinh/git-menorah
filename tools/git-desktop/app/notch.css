@@ -5,7 +5,7 @@
   --ok:#4cc38a; --accent:#4c8dff; --warn:#e0a83a;
   --claude:#d97757; --codex:#e3e8ef;
   --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-  --bar-h:38px; --notch-w:200px; --open-w:580px;
+  --bar-h:38px; --notch-w:190px; --open-w:580px;
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
@@ -22,6 +22,10 @@ body.no-notch #bar { grid-template-columns: 1fr 0 1fr; }
 .wing { display: flex; align-items: center; gap: 7px; min-width: 0; padding: 0 12px; }
 .wing.left { justify-content: flex-start; }
 .wing.right { justify-content: flex-end; }
+/* Viên thu gọn: cánh hẹp — chừa mép ngoài, sát phía tai thỏ. */
+#island:not(.open) .wing { gap: 5px; }
+#island:not(.open) .wing.left { padding: 0 2px 0 10px; }
+#island:not(.open) .wing.right { padding: 0 10px 0 2px; }
 .bar-title { font-weight: 600; color: var(--muted); font-size: 12px; }
 .count { font-weight: 700; font-variant-numeric: tabular-nums; font-size: 13px; }
 .count.run { color: var(--ok); }

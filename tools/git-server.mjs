@@ -779,7 +779,7 @@ async function gitPlan(body) {
     return block(`A ${s.op} is in progress — Continue or Abort it first.`);
   }
   const needClean = (what) => s.tracked ? block(`${s.tracked} tracked file(s) have uncommitted changes — commit or stash before you ${what}. "merge --abort" cannot restore changes that were there before.`) : null;
-  const br = ['merge', 'rebase', 'switch', 'create', 'pull', 'push'].includes(op) ? await gitBranches(dir) : null;
+  const br = ['merge', 'rebase', 'switch', 'create', 'pull', 'push', 'delete-branch', 'delete-remote'].includes(op) ? await gitBranches(dir) : null;
   // Commit làm trên HEAD tách rời mà chưa nhánh nào giữ: rời đi (switch / checkout) là chỉ còn tìm lại qua reflog.
   const warnLeaveDetached = async () => {
     if (!s.detached) return;
@@ -843,24 +843,34 @@ async function gitPlan(body) {
   }
 
   if (op === 'push') {
-    if (!s.branch) return block('Detached HEAD — no branch to push.');
+    // `branch`: đẩy một nhánh cục bộ khác (menu chuột phải ở danh sách nhánh) — không cần switch.
+    const other = body.branch && body.branch !== s.branch ? br.local.find((b) => b.name === body.branch) : null;
+    if (body.branch && body.branch !== s.branch && !other) throw new Error(`Branch ${body.branch} not found — refresh and try again.`);
+    const head = other ? other.name : s.branch;
+    if (!head) return block('Detached HEAD — no branch to push.');
+    const upstream = other ? other.upstream || null : s.upstream;
+    const gone = other ? other.track === '[gone]' : false;
+    const ahead = other ? Number(/ahead (\d+)/.exec(other.track)?.[1] || 0) : s.ahead;
+    const behind = other ? Number(/behind (\d+)/.exec(other.track)?.[1] || 0) : s.behind;
     const remotes = await gitRemotes(dir);
     let remote, dest, setUp = false;
-    if (s.upstream) {
-      remote = splitRemote(remotes, s.upstream);
-      if (!remote) return block(`Could not get the remote from upstream ${s.upstream}.`);
-      dest = s.upstream.slice(remote.length + 1);
+    if (upstream) {
+      remote = splitRemote(remotes, upstream);
+      if (!remote) return block(`Could not get the remote from upstream ${upstream}.`);
+      dest = upstream.slice(remote.length + 1);
     } else {
       remote = body.remote || (remotes.includes('origin') ? 'origin' : remotes[0]);
-      dest = s.branch; setUp = true;
+      dest = head; setUp = true;
     }
     if (!remotes.includes(remote)) return block(`Remote ${remote} does not exist.`);
     if (r.gitflow && PROTECTED_RE.test(dest)) return block(`${dest} only accepts changes through a pull request — push a feature branch and open one.`);
-    if (s.behind) plan.warn.push(`The remote has ${s.behind} commit(s) you don't have — the push will be rejected. Pull first.`);
-    if (!setUp && !s.ahead) plan.warn.push('No new commits to push.');
+    if (behind) plan.warn.push(`The remote has ${behind} commit(s) you don't have — the push will be rejected. Pull first.`);
+    if (gone) plan.warn.push(`${upstream} was deleted on the remote — this push creates it again.`);
+    else if (!setUp && !ahead) plan.warn.push('No new commits to push.');
     if (dest === 'develop') plan.warn.push('Pushing develop: Jenkins dev will build this version.');
-    plan.title = `Push ${s.branch} → ${remote}/${dest}`;
-    plan.steps.push({ args: ['push', ...(setUp ? ['-u'] : []), remote, `HEAD:refs/heads/${dest}`], timeout: 120000, progress: true });
+    plan.title = `Push ${head} → ${remote}/${dest}`;
+    plan.steps.push({ args: ['push', ...(setUp ? ['-u'] : []), remote, `${other ? `refs/heads/${head}` : 'HEAD'}:refs/heads/${dest}`], timeout: 120000, progress: true });
+    if (other) plan.expect += '#' + head;
     return plan;
   }
 
@@ -916,34 +926,64 @@ async function gitPlan(body) {
     return plan;
   }
 
+  // Kéo nhánh thả lên nhánh khác: `into` (merge) / `from` (rebase) là nhánh phải đứng ở HEAD.
+  // Trang đã gửi sang worktree đang giữ nhánh đó (`away` = không phải worktree đang xem); nhánh
+  // chưa worktree nào giữ thì switch worktree này sang nó trước.
+  const onto = async (name, what) => {
+    if (!name || name === s.branch) return null;
+    const b = br.local.find((x) => x.name === name);
+    if (!b) throw new Error(`Branch ${name} not found — refresh and try again.`);
+    if (b.wtPath) throw new Error(`${name} is checked out in another worktree — refresh and try again.`);
+    if (s.tracked) return block(`${s.tracked} tracked file(s) have uncommitted changes here — commit or stash before switching to ${name} to ${what}.`);
+    plan.warn.push(`Switches ${t.wt ? wtShortName(t.wt) : 'the main worktree'} from ${s.branch || 'detached HEAD'} to ${name} first — ${name} is not checked out anywhere.`);
+    return name;
+  };
+  const awayNote = (head) => { if (body.away) plan.warn.push(`Runs in ${t.wt ? wtShortName(t.wt) : 'the main worktree'}, where ${head} is checked out.`); };
+
   if (op === 'merge') {
-    if (!s.branch) return block('Detached HEAD — switch to the target branch first.');
+    const sw = await onto(body.into, 'merge');
+    if (plan.block) return plan;
+    const head = sw || s.branch;
+    if (!head) return block('Detached HEAD — switch to the target branch first.');
     const ref = pickRef(br, body.branch);
-    if (ref.local && ref.name === s.branch) return block('Cannot merge a branch into itself.');
-    if (ref.short === 'develop' && PROTECTED_RE.test(s.branch)) return block(`Never merge develop into ${s.branch} (gitflow). Feature branches reach ${s.branch} through a pull request.`);
-    if (r.gitflow && PROTECTED_RE.test(s.branch)) return block(`${s.branch} only accepts changes through a pull request.`);
+    if (ref.local && ref.name === head) return block('Cannot merge a branch into itself.');
+    if (ref.short === 'develop' && PROTECTED_RE.test(head)) return block(`Never merge develop into ${head} (gitflow). Feature branches reach ${head} through a pull request.`);
+    if (r.gitflow && PROTECTED_RE.test(head)) return block(`${head} only accepts changes through a pull request.`);
     if (needClean('merge')) return plan;
-    const n = await countRev(dir, [`HEAD..${ref.name}`]);
-    if (n === 0) return block(`${s.branch} already contains every commit of ${ref.name}.`);
-    if (ref.remote && ref.short === s.branch) plan.warn.push(`Merging this branch's own remote copy — same as pull with merge.`);
-    plan.title = `Merge ${ref.name} into ${s.branch}`;
-    plan.steps.push({ args: ['merge', body.ff ? '--ff' : '--no-ff', '--no-edit', ref.name] });
-    if (n != null) plan.warn.unshift(`Brings ${n} commit(s) from ${ref.name} into ${s.branch}.`);
+    const n = await countRev(dir, [`${sw || 'HEAD'}..${ref.name}`]);
+    if (n === 0) return block(`${head} already contains every commit of ${ref.name}.`);
+    if (ref.remote && ref.short === head) plan.warn.push(`Merging this branch's own remote copy — same as pull with merge.`);
+    plan.title = `Merge ${ref.name} into ${head}`;
+    const mergeArgs = ['merge', body.ff ? '--ff' : '--no-ff', '--no-edit', ref.name];
+    if (sw) {
+      plan.steps.push({ args: ['switch', sw] });
+      // Sau switch HEAD đã là nhánh đích: bước merge soát theo nhánh đó.
+      plan.steps.push({ args: mergeArgs, cwd: dir, branch: sw });
+      plan.expect += '#' + sw;
+    } else plan.steps.push({ args: mergeArgs });
+    if (n != null) plan.warn.unshift(`Brings ${n} commit(s) from ${ref.name} into ${head}.`);
+    awayNote(head);
     return plan;
   }
 
   if (op === 'rebase') {
-    if (!s.branch) return block('Detached HEAD.');
-    if (SHARED_RE.test(s.branch)) return block(`${s.branch} is a shared branch — never rebase it. Use merge.`);
+    const sw = await onto(body.from, 'rebase it');
+    if (plan.block) return plan;
+    const head = sw || s.branch;
+    if (!head) return block('Detached HEAD.');
+    if (SHARED_RE.test(head)) return block(`${head} is a shared branch — never rebase it. Use merge.`);
     const ref = pickRef(br, body.branch);
-    if (ref.local && ref.name === s.branch) return block('Cannot rebase a branch onto itself.');
+    if (ref.local && ref.name === head) return block('Cannot rebase a branch onto itself.');
     if (needClean('rebase')) return plan;
-    const p = await pushedInRange(dir, `${ref.name}..HEAD`);
+    const p = await pushedInRange(dir, `${ref.name}..${sw || 'HEAD'}`);
     if (p.pushed == null) return block('Could not count commits already on the remote (git failed or timed out) — not rebasing without being sure.');
     if (p.pushed) return block(`${p.pushed}/${p.all} commit(s) that would be rewritten are already on the remote — rebasing would need a force push, which this project forbids. Use merge.`);
     if (!p.all) plan.warn.push('The branch has no commits of its own — rebase only moves it to the tip of the other branch.');
-    plan.title = `Rebase ${s.branch} onto ${ref.name}`;
-    plan.steps.push({ args: ['rebase', ref.name] });
+    plan.title = `Rebase ${head} onto ${ref.name}`;
+    // `git rebase <base> <branch>` tự switch sang <branch> trước.
+    plan.steps.push({ args: sw ? ['rebase', ref.name, sw] : ['rebase', ref.name] });
+    if (sw) plan.expect += '#' + sw;
+    awayNote(head);
     return plan;
   }
 
@@ -1091,6 +1131,47 @@ async function gitPlan(body) {
     plan.removedWt = t.wt;
     plan.removedPath = dir;
     plan.expect += `#rm:${body.deleteBranch ? 1 : 0}`;
+    return plan;
+  }
+
+  // Xoá nhánh (chuột phải ở thanh trái). Nhánh local: không phải nhánh đang mở ở worktree nào.
+  // Nhánh remote: git push --delete. Commit chỉ có ở nhánh bị xoá (không nằm trên nhánh local
+  // hay remote nào khác) thì bắt tick ô xác nhận và in SHA để lấy lại. `expect` kèm SHA của
+  // nhánh: nhánh đổi giữa lúc xem hộp và lúc bấm thì dừng.
+  if (op === 'delete-branch' || op === 'delete-remote') {
+    const local = op === 'delete-branch';
+    const ref = pickRef(br, body.branch);
+    if (ref.local !== local) throw new Error(`Branch ${body.branch} not found — refresh and try again.`);
+    if (SHARED_RE.test(ref.short)) return block(`${ref.short} is a shared branch — it is never deleted from here.`);
+    const full = `refs/${local ? 'heads' : 'remotes'}/${ref.name}`;
+    const oid = (await git(dir, ['rev-parse', '--verify', '--quiet', full])).out.trim();
+    if (!oid) throw new Error(`Branch ${ref.name} not found — refresh and try again.`);
+    if (local) {
+      const b = br.local.find((x) => x.name === ref.name);
+      if (ref.name === s.branch) return block(`${ref.name} is the current branch — switch to another branch first.`);
+      if (b.wtPath) return block(`${ref.name} is checked out in ${b.wtPath} — switch that worktree to another branch or remove it first.`);
+    }
+    const only = await countRev(dir, local
+      ? [full, '--not', '--remotes', `--exclude=${ref.name}`, '--branches']
+      : [full, '--not', '--branches', `--exclude=${ref.name}`, '--remotes']);
+    if (only == null) return block(`Could not check whether ${ref.name} has commits found nowhere else — not deleting it.`);
+    if (only) {
+      plan.warn.push(`${only} commit(s) exist only on ${ref.name}. To get them back later (until git gc): git branch ${ref.short} ${oid}`);
+      plan.ack = `I understand the ${only} commit(s) found only on ${ref.name} will no longer be on any branch.`;
+    } else plan.warn.push(`Every commit of ${ref.name} is already on another branch — nothing is lost.`);
+    if (local) {
+      const b = br.local.find((x) => x.name === ref.name);
+      if (b.upstream && b.track !== '[gone]') plan.warn.push(`The remote branch ${b.upstream} is not deleted.`);
+      plan.steps.push({ args: ['branch', '-D', ref.name] });
+      plan.title = `Delete branch ${ref.name}`;
+    } else {
+      plan.warn.push(`This deletes ${ref.short} on ${ref.remote} for everyone — an open pull request from it gets closed. Checked against your last fetch.`);
+      const by = br.local.filter((x) => x.upstream === ref.name).map((x) => x.name);
+      if (by.length) plan.warn.push(`Local branch ${by.join(', ')} tracks it — the local branch is kept.`);
+      plan.steps.push({ args: ['push', ref.remote, '--delete', `refs/heads/${ref.short}`], timeout: 120000, progress: true });
+      plan.title = `Delete ${ref.short} from ${ref.remote}`;
+    }
+    plan.expect += `#del:${ref.name}@${oid}`;
     return plan;
   }
 
@@ -1359,6 +1440,8 @@ async function gitRun(body) {
     }
     // Merge vào develop vướng xung đột: báo trang worktree develop để mở ra sửa (hoặc Abort).
     if (!ok && plan.devDir && (await gitStatus(plan.devDir, 'no', 0)).op === 'merge') plan.conflictWt = plan.devWt;
+    // Kéo thả merge / rebase ở worktree khác vướng xung đột: cũng mở worktree đó.
+    else if (!ok && body.away && (await gitStatus(dir, 'no', 0)).op) plan.conflictWt = wt;
   } finally {
     gitBusy.delete(r.real);
     gitRunning.delete(r.real);

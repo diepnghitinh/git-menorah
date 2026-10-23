@@ -60,10 +60,12 @@ const app = {
   // 'agents' (menu ⌘3, bản cũ) = màn Git mở sẵn tab Agents ở cột trái.
   setView(view) {
     const agents = view === 'agents';
-    if (!['canvas', 'git'].includes(view)) view = agents ? 'git' : 'canvas';
+    if (view === 'stats') { AIHub.tab = 'stats'; view = 'hub'; }   // bản cũ: Statistics là mục riêng trên rail
+    if (!['canvas', 'git', 'hub', 'settings'].includes(view)) view = agents ? 'git' : 'canvas';
     this.view = view;
     $$('.rail-btn').forEach((t) => t.classList.toggle('on', t.dataset.view === view));
-    for (const v of ['canvas', 'git']) $(`#view-${v}`).hidden = v !== view;
+    for (const v of ['canvas', 'git', 'hub', 'settings']) $(`#view-${v}`).hidden = v !== view;
+    if (view === 'hub' || view === 'settings') AIHub.show(view);
     if (view === 'git' && !this.gitLoaded) {
       $('#git-frame').src = `${this.info.gitOrigin}/git.html?git=${encodeURIComponent(this.gitQuery)}`;
       this.gitLoaded = true;
@@ -651,6 +653,8 @@ const app = {
         window.menorah.winDrag(m.phase);
       } else if (m.type === 'menorah:win-zoom') {
         window.menorah.winZoom();
+      } else if (m.type === 'menorah:theme' && ['auto', 'light', 'dark'].includes(m.mode)) {
+        window.menorah.setTheme(m.mode);
       } else if (typeof m.type === 'string' && m.type.startsWith('menorah:term-')) {
         this.gitTerm(m);
       }

@@ -1,13 +1,14 @@
 # GitMenorah
 
-**A Git worktrees UI and a central control room for your coding agents.**
+**A Git worktrees UI, a central control room for your coding agents, and an Inference Router that sends each Claude Code task to the right model.**
 
-GitMenorah is a desktop app for developers who run Claude Code and Codex every day. It does two jobs in one window:
+GitMenorah is a desktop app for developers who run Claude Code and Codex every day. It does three jobs in one window:
 
 1. **Git worktrees, made visual.** Create, inspect, merge and clean up worktrees from a UI instead of the command line, so every task gets its own branch and folder.
 2. **Every agent, managed in one place.** Each Claude Code, Codex or shell session is a live node on a canvas. See which agent is running, which is waiting for you and which is done, across all your projects.
+3. **New: the right model for every task.** The [Inference Router](#inference-router) sorts each Claude Code sub-agent task (bug fix, tests, architecture, docs…) and runs it on the Claude model you picked for that kind of work: Opus where quality matters, Haiku where speed and cost matter. A Statistics tab shows where every token and dollar went.
 
-Put the two together: give each agent its own worktree, let agents share context, then review and merge their work from the same window.
+Put them together: give each agent its own worktree, let agents share context, route their work to the right model, then review and merge it from the same window.
 
 **[⬇ Download GitMenorah](https://github.com/diepnghitinh/git-menorah/releases)** for macOS (Apple Silicon and Intel) or Windows x64.
 
@@ -27,6 +28,53 @@ Coding agents are fast. Juggling them is not. Five terminal tabs, three half-fin
 | **Agents that share context** | Draw a wire between two nodes and each agent can read the other's notes, transcript or terminal with one command. |
 | **Git you can trust** | Every Git action shows the exact commands before it runs. Nothing happens behind your back. |
 | **Resource guard rails** | Cap CPU and RAM for everything your agents spawn, so a runaway test suite cannot freeze your machine. |
+| **Pay for the model the task needs** | The Inference Router runs tests and docs on Haiku and design work on Opus, per project, and shows the cost of every turn. |
+
+---
+
+## Inference Router
+
+> **New in 1.0.7.** Works with **Claude Code only**. Codex sessions and shells are never routed.
+
+Claude Code hands a lot of its work to sub-agents: "fix this failing test", "write the docs for this module", "design the data model". By default every one of them runs on the same model as the main session. That means paying Opus prices for a README, or getting Haiku-level thinking on an architecture decision.
+
+The Inference Router fixes that. Open **AI Hub** in the left rail, turn the router on and give a project a router:
+
+- **Software Engineering:** bug fixing, code generation, testing, performance, architecture, UX and UI components, code review and security, DevOps, documentation.
+- **AI Engineer:** training and fine-tuning, data pipelines, AI-generated data, LLM apps and agents, prompt engineering, model evaluation, data analysis, AI system design, MLOps.
+
+Each task has its own Claude model, with sensible defaults (Opus for architecture, UI and prompts; Sonnet for code; Haiku for tests and docs) that you can change.
+
+### How it works
+
+1. Claude Code sessions opened from a project with a router talk to a small proxy on `127.0.0.1` instead of the API directly.
+2. When a sub-agent starts, a small, cheap judge model (Claude Haiku 4.5 by default, or a provider from Settings) reads the task once and picks one of the router's tasks.
+3. The proxy sends that turn to the model set for the task, then forwards it to your real endpoint: `ANTHROPIC_BASE_URL` from `~/.claude/settings.json`, the environment, or `api.anthropic.com`.
+4. The main conversation, Explore agents, side requests and safety checks pass through untouched. If Anthropic refuses the routed model, the original request is sent again, so a turn never fails because of routing.
+
+### Benefits
+
+| | |
+|---|---|
+| **Lower cost** | Routine work (tests, docs, data analysis) runs on cheaper, faster models. You only pay for Opus where it changes the result. |
+| **Better results where it counts** | Architecture, UI and prompt work get the strongest model even when your main session runs on something lighter. |
+| **Faster turns** | Small models answer simple sub-agent tasks quicker, so the whole session moves faster. |
+| **Per-project control** | A backend repo can use Software Engineering, an ML repo AI Engineer, and a side project no router at all. |
+| **See where the money goes** | The **Statistics** tab in AI Hub draws a flow diagram of Claude Code → router → task → model, sized by turns, tokens or estimated cost, for today, 7 or 30 days, per project. |
+| **Private by design** | Usage is stored in a local SQLite database in the app's data folder: task, model, tokens, cost and time, never prompt text. One click deletes it. |
+| **Zero lock-in** | Turn the router off and sessions go straight to the API again from the next turn. |
+
+### Claude Code outside GitMenorah
+
+The router also works for Claude Code in your own terminal or IDE. In AI Hub, under **Claude Code outside Git Menorah**, pick a router and press **Install into settings.json**. GitMenorah points `ANTHROPIC_BASE_URL` in `~/.claude/settings.json` at its proxy and keeps a backup of the original file next to it.
+
+**Restore original** puts the file back exactly as it was. If you edited the file after the install, only the old `ANTHROPIC_BASE_URL` is restored and your other changes stay. While installed, Claude Code needs GitMenorah to be running; the proxy keeps the same address across restarts.
+
+### Providers
+
+**Settings** lists AI providers: OpenRouter, OpenAI, Google Gemini, DeepSeek, Ollama, any OpenAI-compatible server (vLLM, LM Studio, LiteLLM…) and TypeSafe (judge only). **Add provider** checks the connection before saving. API keys are encrypted with the OS keychain and never shown again.
+
+Today a provider can act as the **judge**; in that case the sub-agent's task text is sent to that provider to be sorted. A task can also be given a provider model as its **target**: the choice is saved, but the turn still runs on Claude until protocol translation for other providers ships.
 
 ---
 
@@ -113,7 +161,8 @@ Open **GitMenorah → Accounts…** (or **Settings… → Accounts**) to sign in
 
 - **Electron** shell for the window, canvas and Git UI.
 - **menorah-agentd**, a small Go sidecar that runs every terminal (PTY on macOS, ConPTY on Windows), reads agent transcripts, enforces resource limits and serves `menorah-context`. It idles at about 6 MB of RAM. If it crashes, it restarts within a second and restores your limits and wiring.
-- **Local first.** No GitMenorah cloud and no GitMenorah account. Everything runs on your machine against your own repositories and your own Claude Code / Codex installs.
+- **Inference Router proxy** inside the app, on `127.0.0.1` with a per-install token. Usage statistics live in a local SQLite database.
+- **Local first.** No GitMenorah cloud and no GitMenorah account. Everything runs on your machine against your own repositories and your own Claude Code / Codex installs. Requests only go to the endpoints you already use and to providers you add yourself.
 
 ---
 

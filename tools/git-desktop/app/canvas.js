@@ -478,8 +478,14 @@ class Canvas {
       const [a, b] = this.anchors(A, B);
       const vertical = Math.abs(a.x - b.x) < Math.abs(a.y - b.y) && (a.x === A.x + A.w / 2);
       const d = vertical ? `M${a.x},${a.y} C${a.x},${(a.y + b.y) / 2} ${b.x},${(a.y + b.y) / 2} ${b.x},${b.y}` : this.curve(a, b);
+      // Mũi tên chỉ vào node đọc được context: terminal nào cũng chạy được menorah-context,
+      // note / ảnh thì không. Dây hai chiều — hai terminal nối nhau thì đọc được của nhau.
+      const aReads = A.kind === 'terminal'; const bReads = B.kind === 'terminal';
+      const mk = this.selLink === l.id ? 'url(#arrow-sel)' : 'url(#arrow)';
+      const tip = [aReads && `${A.title} reads context from ${B.title}`, bReads && `${B.title} reads context from ${A.title}`].filter(Boolean).join('\n')
+        || `${A.title} — ${B.title}: neither can read the other (only terminals can)`;
       const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-      g.innerHTML = `<path class="hit" d="${d}"/><path class="rope" d="${d}"/>`;
+      g.innerHTML = `<title>${esc(tip)}</title><path class="hit" d="${d}"/><path class="rope" d="${d}"${aReads ? ` marker-start="${mk}"` : ''}${bReads ? ` marker-end="${mk}"` : ''}/>`;
       if (this.selLink === l.id) {
         g.classList.add('sel');
         const mx = (a.x + b.x) / 2; const my = (a.y + b.y) / 2;
@@ -624,12 +630,17 @@ class TerminalView extends NodeView {
     this.term.onData((d) => { if (!this.stopped) window.menorah.ptyWrite(n.id, d); });
     this.term.onResize(({ cols, rows }) => { if (!this.stopped) window.menorah.ptyResize(n.id, cols, rows); });
 
-    // Dán ảnh (⌘V khi clipboard là ảnh, không có chữ): lưu thành tệp rồi gửi đường dẫn.
+    // Dán tệp / ảnh: tệp đã copy (Finder, "Copy Media" của Telegram…) → đường dẫn của nó; ảnh
+    // không có tệp (ảnh chụp, Copy Image) → lưu vào uploads/ rồi gửi đường dẫn. Clipboard có chữ
+    // mà không có tệp thật (Word kèm ảnh xem trước…) thì để xterm dán chữ như thường.
     this.body.addEventListener('paste', async (e) => {
-      if (e.clipboardData.types.includes('text/plain')) return;
+      const dt = e.clipboardData;
+      const real = [...dt.files].some((f) => window.menorah.pathOf(f));
+      if (dt.types.includes('text/plain') && !real) return;
       e.preventDefault(); e.stopPropagation();
-      const p = await window.menorah.clipboardImage();
-      if (p) this.acceptPaths([p]); else toast('The clipboard has no image or text.');
+      let paths = await droppedPaths(dt);
+      if (!paths.length) { const p = await window.menorah.clipboardImage(); if (p) paths = [p]; }
+      if (paths.length) this.acceptPaths(paths); else toast('The clipboard has no image or text.');
     }, true);
 
     this.wantStart = opts.start || opts.running;
