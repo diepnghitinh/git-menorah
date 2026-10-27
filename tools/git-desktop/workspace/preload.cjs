@@ -55,6 +55,9 @@ contextBridge.exposeInMainWorld('menorah', {
   // Mức zoom của trang (⌘+ / ⌘−) để rail giữ nguyên cỡ.
   zoomFactor: () => webFrame.getZoomFactor(),
 
+  // Bộ gõ tiếng Việt đang chạy trên máy (UniKey, OpenKey…) hoặc null.
+  vnIme: () => ipcRenderer.invoke('ws:vn-ime'),
+
   // Giới hạn CPU / RAM chung cho mọi terminal.
   limits: () => ipcRenderer.invoke('ws:limits'),
   setLimits: (l) => ipcRenderer.invoke('ws:limits-set', l),

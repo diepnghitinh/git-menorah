@@ -40,6 +40,10 @@ const app = {
     $('#resume-all').addEventListener('click', () => this.canvas.resumeAll());
     this.bindShots();
     this.bindGitFrame();
+    // Bộ gõ của máy có thể vừa bật / tắt khi người dùng ở app khác: dò lại mỗi lần quay về.
+    vnInput.probe();
+    window.addEventListener('focus', () => vnInput.probe());
+    vnInput.listen(() => this.postGit({ type: 'menorah:vnkey', ...vnInput.config() }));
     setInterval(() => this.pollStats(), 2000);
     setInterval(() => this.pushAgents(), 3000);
 
@@ -96,7 +100,7 @@ const app = {
   // Breadcrumb của canvas: [project ▾] / tab 1 · tab 2 … Chưa có project thì chỉ còn nút chọn thư mục.
   renderCanvasTabs() {
     const bar = $('#canvas-tabs'), crumb = $('#canvas-crumb');
-    const pick = (e) => { e.stopPropagation(); this.projects.length ? this.toggleProjectMenu(e.currentTarget) : this.addProject(); };
+    const pick = (e) => { e.stopPropagation(); this.toggleProjectMenu(e.currentTarget); };
     if (!this.project) {
       crumb.replaceChildren(h('button.cproj.empty', { title: 'Open a project folder or repository', onclick: pick }, icon('folder'), h('span', 'Select Folder Project')));
       bar.replaceChildren();
@@ -145,14 +149,7 @@ const app = {
     const short = (p) => (p.startsWith(this.project.cwd + '/') ? p.slice(this.project.cwd.length + 1) : p.replace(this.info.home, '~'));
     const item = (ic, label, sub, act) => h('button.menu-item', { title: sub || null, onclick: () => { m.hidden = true; act(); } },
       icon(ic), h('span.grow', h('span', label), sub ? h('span.sub', short(sub)) : null));
-    const list = h('div.menu-list', ...repos.map((r) => {
-      const it = item('branch', r.name, r.path, () => this.addCanvas({ cwd: r.path, name: r.name }));
-      it.dataset.q = `${r.name} ${r.path}`.toLowerCase();
-      return it;
-    }));
-    const filter = repos.length <= 8 ? null : h('input.menu-filter', { type: 'text', placeholder: 'Filter repositories…', spellcheck: false,
-      oninput: (e) => { const q = e.target.value.trim().toLowerCase(); for (const it of list.children) it.hidden = !!q && !it.dataset.q.includes(q); },
-      onkeydown: (e) => { e.stopPropagation(); if (e.key === 'Escape') m.hidden = true; if (e.key === 'Enter') [...list.children].find((it) => !it.hidden)?.click(); } });
+    const { filter, list } = this.repoPicker(m, repos, (r) => item('branch', r.name, r.path, () => this.addCanvas({ cwd: r.path, name: r.name })));
     m.replaceChildren(...[
       h('div.menu-hd', 'New tab'),
       item('folder', 'Open Folder…', '', () => this.addCanvas({ pick: true })),
@@ -162,11 +159,28 @@ const app = {
       filter,
       repos.length && list,
     ].filter(Boolean));
+    this.placeMenu(m, btn);
+    filter?.focus();
+  },
+
+  // Danh sách repo của tab Project trong một menu; nhiều hơn 8 repo thì có ô lọc (Enter mở repo đầu tiên còn hiện).
+  repoPicker(m, repos, itemOf) {
+    const list = h('div.menu-list', ...repos.map((r) => {
+      const it = itemOf(r);
+      it.dataset.q = `${r.name} ${r.path}`.toLowerCase();
+      return it;
+    }));
+    const filter = repos.length <= 8 ? null : h('input.menu-filter', { type: 'text', placeholder: 'Filter repositories…', spellcheck: false,
+      oninput: (e) => { const q = e.target.value.trim().toLowerCase(); for (const it of list.children) it.hidden = !!q && !it.dataset.q.includes(q); },
+      onkeydown: (e) => { e.stopPropagation(); if (e.key === 'Escape') m.hidden = true; if (e.key === 'Enter') [...list.children].find((it) => !it.hidden)?.click(); } });
+    return { filter, list };
+  },
+
+  placeMenu(m, btn) {
     const r = btn.getBoundingClientRect();
     m.hidden = false;
     m.style.top = `${r.bottom + 6}px`;
     m.style.left = `${Math.max(8, Math.min(r.left, innerWidth - m.offsetWidth - 8))}px`;
-    filter?.focus();
   },
 
   async addCanvas(opts = {}) {
@@ -254,20 +268,28 @@ const app = {
     }
   },
 
-  toggleProjectMenu(btn) {
+  // Đổi project, hoặc tạo board mới: chọn folder bằng tay, hay một repo trong tab Project chưa thành board.
+  async toggleProjectMenu(btn) {
     const m = $('#project-menu');
     $('#canvas-menu').hidden = true;
     if (!m.hidden) { m.hidden = true; return; }
-    m.replaceChildren(
+    const opened = new Set(this.projects.map((p) => p.cwd));
+    const repos = (await window.menorah.repos()).filter((r) => !opened.has(r.path));
+    const { filter, list } = this.repoPicker(m, repos, (r) => h('button.menu-item', { title: r.path, onclick: () => { m.hidden = true; this.addProject(r.path); } },
+      icon('branch'), h('span.grow', h('span', r.name), h('span.sub', r.path.replace(this.info.home, '~')))));
+    m.replaceChildren(...[
       ...this.projects.map((p) => h(`button.menu-item${p.id === this.project?.id ? '.on' : ''}`, { onclick: async () => { m.hidden = true; await this.openProject(p.id); } },
         h('span.grow', h('span', p.name), h('span.sub', { title: p.cwd }, p.cwd.replace(this.info.home, '~'))),
         h('span.x', { title: 'Remove from list', onclick: (e) => { e.stopPropagation(); m.hidden = true; this.removeProject(p); } }, icon('close')))),
-      this.projects.length ? h('div.menu-sep') : '',
-      h('button.menu-item', { onclick: () => { m.hidden = true; this.addProject(); } }, icon('plus'), h('span.grow', 'Open Folder…')));
-    const r = btn.getBoundingClientRect();
-    m.hidden = false;
-    m.style.top = `${r.bottom + 6}px`;
-    m.style.left = `${Math.max(8, Math.min(r.left, innerWidth - m.offsetWidth - 8))}px`;
+      this.projects.length && h('div.menu-sep'),
+      h('button.menu-item', { onclick: () => { m.hidden = true; this.addProject(); } }, icon('plus'), h('span.grow', 'Open Folder…')),
+      repos.length && h('div.menu-sep'),
+      repos.length && h('div.menu-hd', 'From the Project tab'),
+      filter,
+      repos.length && list,
+    ].filter(Boolean));
+    this.placeMenu(m, btn);
+    filter?.focus();
   },
 
   // Chuột phải trên nền canvas: tạo agent/terminal/ghi chú, góc trên trái node nằm ngay điểm bấm.
@@ -349,7 +371,11 @@ const app = {
     let cleanup = null;
     await modal((d, close) => {
       d.classList.add('settings');
-      const panes = { accounts: ['Accounts', (b) => this.accountsPane(b, close)], limits: ['Terminal limits', (b) => this.limitsPane(b, close)] };
+      const panes = {
+        accounts: ['Accounts', (b) => this.accountsPane(b, close)],
+        limits: ['Terminal limits', (b) => this.limitsPane(b, close)],
+        vietnamese: ['Vietnamese typing', (b) => this.vnPane(b, close)],
+      };
       const tabs = h('div.set-tabs', { role: 'tablist' });
       const body = h('div.set-body');
       const show = async (k) => {
@@ -517,6 +543,34 @@ const app = {
     return () => { clearInterval(poll); body.onkeydown = null; };
   },
 
+  // Gõ tiếng Việt trong terminal (app/vnkey.js). Đổi là lưu ngay, mọi terminal dùng luôn.
+  async vnPane(body, close) {
+    const c = vnInput.cfg, keys = this.info.platform === 'darwin' ? '⌃⇧ (Control + Shift)' : 'Ctrl + Shift';
+    const status = h('div.limit-now');
+    const paint = () => {
+      status.textContent = vnInput.cfg.method === 'off' ? 'Built-in Vietnamese typing is off.'
+        : vnInput.system ? `${vnInput.system} is running on this computer${vnInput.cfg.auto ? ' — the built-in typing stays off while it runs.' : '. Turn it off (or switch it to English) so the two do not add tone marks twice.'}`
+        : vnInput.yielded() ? 'Another Vietnamese keyboard is typing in the terminal — the built-in typing paused. Press ' + keys + ' to take over again.'
+        : `No Vietnamese keyboard app found — terminals use the built-in ${vnInput.cfg.method === 'vni' ? 'VNI' : 'Telex'} typing (${vnInput.cfg.on ? 'VI' : 'EN'} now).`;
+    };
+    const method = h('select', { onchange: () => vnInput.set({ method: method.value, on: true }) },
+      [['off', 'Off'], ['telex', 'Telex — aa â · dd đ · s f r x j tones'], ['vni', 'VNI — 6 ^ · 7 ơ ư · 8 ă · 9 đ · 1–5 tones']]
+        .map(([v, label]) => h('option', { value: v, selected: c.method === v }, label)));
+    const check = (key, label) => h('label.check', h('input', { type: 'checkbox', checked: c[key], onchange: (e) => vnInput.set({ [key]: e.target.checked }) }), h('span', label));
+    const off = vnInput.listen(paint);
+    paint();
+    vnInput.probe();
+    body.replaceChildren(
+      h('p', `Type Vietnamese straight into terminals and agent prompts, without a keyboard app. Press ${keys} in a terminal, or click VI / EN on its title bar, to switch between Vietnamese and English.`),
+      h('label.field', h('span', 'Typing method'), method),
+      check('auto', 'Turn off when this computer already has a Vietnamese keyboard (UniKey, OpenKey, EVKey, GoTiengViet, XKey, macOS Vietnamese input…)'),
+      check('modern', 'Place tone marks the new way: hoà, thuỷ (instead of hòa, thủy)'),
+      status,
+      h('div.actions', h('button.primary', { onclick: () => close(true) }, 'Done')),
+    );
+    return off;
+  },
+
   // ─── Clone from URL ─────────────────────────────────────────────────────
   // Paste a URL or pick a repository from a signed-in account. The Git server runs `git clone`
   // in the background and adds the result to the Git tab; `tab` also opens a canvas tab on it.
@@ -639,6 +693,7 @@ const app = {
       const m = e.data || {};
       if (m.type === 'menorah:ready') {
         this.gitReady = true;
+        this.postGit({ type: 'menorah:vnkey', ...vnInput.config() });
         if (this.wantAgentsTab) this.postGit({ type: 'menorah:side', tab: 'agents' });
         this.pushAgents();
       } else if (m.type === 'menorah:open-node' && typeof m.nodeId === 'string') {
@@ -655,6 +710,10 @@ const app = {
         window.menorah.winZoom();
       } else if (m.type === 'menorah:theme' && ['auto', 'light', 'dark'].includes(m.mode)) {
         window.menorah.setTheme(m.mode);
+      } else if (m.type === 'menorah:vnkey-toggle') {
+        vnInput.toggle();
+      } else if (m.type === 'menorah:vnkey-foreign') {
+        vnInput.foreignSeen();
       } else if (typeof m.type === 'string' && m.type.startsWith('menorah:term-')) {
         this.gitTerm(m);
       }

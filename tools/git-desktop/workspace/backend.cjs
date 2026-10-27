@@ -192,6 +192,27 @@ function saveBytes(bytes, name) {
 
 // Ảnh chụp màn hình gần đây: macOS đọc vị trí lưu của screencapture (mặc định Desktop).
 let shotDir = null;
+// ─── Bộ gõ tiếng Việt của máy ──────────────────────────────────────────────
+// Unikey, OpenKey, EVKey… chạy thành tiến trình riêng và tự sửa phím trước khi tới app. Đang có
+// một cái thì bộ gõ tích hợp của terminal nhường (tùy chọn "Auto"). Tên tiến trình trên Linux
+// bị cắt còn 15 ký tự nên chỉ so phần đầu. Kết quả giữ 15 giây.
+const VN_IMES = [
+  [/^unikey/i, 'UniKey'], [/^openkey/i, 'OpenKey'], [/^evkey/i, 'EVKey'], [/^gotiengviet/i, 'GoTiengViet'],
+  [/^xkey/i, 'XKey'], [/^laban ?key/i, 'Laban Key'], [/^vietkey/i, 'VietKey'], [/^phtv/i, 'PHTV'],
+  [/^ibus-engine-(bam|uni)/i, 'IBus Vietnamese'], [/^fcitx5?-(bam|uni)/i, 'Fcitx Vietnamese'],
+];
+let vnIme = { at: 0, name: null };
+async function systemVnIme() {
+  if (Date.now() - vnIme.at < 15e3) return vnIme.name;
+  const r = process.platform === 'win32'
+    ? await run('tasklist', ['/fo', 'csv', '/nh'])
+    : await run('ps', process.platform === 'darwin' ? ['-axco', 'comm='] : ['-eo', 'comm=']);
+  const names = r.out.split(/\r?\n/).map((l) => l.replace(/^"([^"]*)".*$/, '$1').trim());
+  const hit = VN_IMES.find(([re]) => names.some((n) => re.test(n)));
+  vnIme = { at: Date.now(), name: hit ? hit[1] : null };
+  return vnIme.name;
+}
+
 async function screenshotDir() {
   if (shotDir) return shotDir;
   if (process.platform === 'darwin') {
@@ -596,6 +617,8 @@ async function setup({ app, gitOrigin, api, settings }) {
     });
     return r.canceled ? null : r.filePaths[0];
   });
+
+  handle('ws:vn-ime', () => systemVnIme());
 
   // Giới hạn CPU / RAM (agentd): áp cho mọi phiên PTY, kể cả khay Terminal của tab Git.
   handle('ws:limits', () => agentd.call('limits'));

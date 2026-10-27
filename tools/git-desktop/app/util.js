@@ -45,6 +45,7 @@ const ICON = {
   eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>',
   route: '<path d="M12 21v-7L7 9V4M12 14l5-5V4"/><path d="m4 7 3-3 3 3M14 7l3-3 3 3"/>',
   info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>',
+  shield: '<path d="M12 3 5 6v5c0 4.5 3 8.3 7 9.5 4-1.2 7-5 7-9.5V6l-7-3Z"/><path d="m9 12 2 2 4-4"/>',
   external: '<path d="M14 4h6v6M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>',
 };
 const icon = (name, cls = '') => { const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('class', `i ${cls}`); s.innerHTML = ICON[name]; return s; };
@@ -152,3 +153,35 @@ function timeAgo(ms) {
 const errText = (e) => String(e?.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
 
 const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
+
+// ─── Gõ tiếng Việt trong terminal (app/vnkey.js) ────────────────────────────
+// Một cài đặt cho mọi terminal: node trên canvas và khay Terminal của tab Git (app chuyển qua
+// postMessage). method 'off' | 'telex' | 'vni'; on = công tắc VI/EN (⌃⇧); auto = nhường bộ gõ
+// của máy; modern = đặt dấu kiểu mới (hoà, thuỷ). Mặc định bật Telex khi máy dùng tiếng Việt.
+const vnInput = {
+  cfg: {
+    method: (navigator.languages || []).some((l) => /^vi\b/i.test(l)) ? 'telex' : 'off', on: true, auto: true, modern: false,
+    ...(() => { try { return JSON.parse(localStorage.getItem('menorah.vnkey')) || {}; } catch { return {}; } })(),
+  },
+  system: null,     // bộ gõ của máy đang chạy (UniKey, OpenKey…) — tiến trình chính dò
+  foreign: false,   // phím tới đã là chữ Việt: có bộ gõ khác gõ hộ (kể cả bộ gõ dò không ra)
+  subs: new Set(),
+  yielded() { return this.cfg.auto && !!(this.system || this.foreign); },
+  // Phương thức dùng thật lúc này cho VnKey.attach.
+  config() { const c = vnInput.cfg; return { method: c.on && !vnInput.yielded() ? c.method : 'off', modern: c.modern }; },
+  set(patch) { Object.assign(this.cfg, patch); localStorage.setItem('menorah.vnkey', JSON.stringify(this.cfg)); this.emit(); },
+  toggle() {
+    if (this.cfg.method === 'off') return;
+    if (this.cfg.auto && this.system) return toast(`${this.system} is typing Vietnamese on this computer — the built-in typing stays off.`);
+    if (this.cfg.auto && this.foreign) { this.foreign = false; return this.set({ on: true }); }
+    this.set({ on: !this.cfg.on });
+  },
+  foreignSeen() { if (this.cfg.auto && !this.foreign) { this.foreign = true; this.emit(); } },
+  async probe() {
+    let s = null;
+    try { s = await window.menorah.vnIme(); } catch {}
+    if (s !== this.system) { this.system = s; this.emit(); }
+  },
+  emit() { for (const fn of this.subs) fn(); },
+  listen(fn) { this.subs.add(fn); return () => this.subs.delete(fn); },
+};

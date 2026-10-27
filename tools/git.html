@@ -1662,7 +1662,8 @@ if (window.parent !== window) {
 // (id ở gitUi.terms), không tự mở shell mới.
 // Nút Terminal = "terminal của chỗ đang xem": chưa có shell → mở; khay đóng → mở; đang ở tab của
 // thư mục này → đóng khay; khác thư mục → chuyển sang tab của thư mục đó, chưa có thì mở mới.
-const GT = { tabs: [], active: null, lib: null, home: '' };
+// vn: bộ gõ tiếng Việt (vnkey.js của app) — app cha gửi phương thức đang dùng ('off' | 'telex' | 'vni').
+const GT = { tabs: [], active: null, lib: null, home: '', vn: { method: 'off', modern: false } };
 const GT_ID = /^gk-term:[\w-]{1,40}$/;
 const GT_ANSI = {
   dark: {
@@ -1705,13 +1706,14 @@ function gtLib() {
     const css = document.createElement('link');
     css.rel = 'stylesheet'; css.href = '/vendor/xterm/css/xterm.css';
     document.head.append(css);
-    const files = ['xterm/lib/xterm.js', 'addon-fit/lib/addon-fit.js', 'addon-unicode11/lib/addon-unicode11.js', 'addon-web-links/lib/addon-web-links.js'];
+    const files = ['xterm/lib/xterm.js', 'addon-fit/lib/addon-fit.js', 'addon-unicode11/lib/addon-unicode11.js', 'addon-web-links/lib/addon-web-links.js', 'vnkey/vnkey.js'];
     const next = (i) => {
       if (i === files.length) return ok();
       const sc = document.createElement('script');
       sc.src = '/vendor/' + files[i];
       sc.onload = () => next(i + 1);
-      sc.onerror = () => { GT.lib = null; fail(new Error('This build has no xterm — rebuild GitMenorah (tools/build-git.sh).')); };
+      // Thiếu bộ gõ tiếng Việt thì terminal vẫn chạy, chỉ không gõ dấu được.
+      sc.onerror = () => { if (files[i].startsWith('vnkey/')) return ok(); GT.lib = null; fail(new Error('This build has no xterm — rebuild GitMenorah (tools/build-git.sh).')); };
       document.head.append(sc);
     };
     next(0);
@@ -1760,6 +1762,7 @@ async function gtAdd(id, cwd, pick = true) {
   try { t.term.loadAddon(new WebLinksAddon.WebLinksAddon((e, url) => window.open(url))); } catch {}
   t.term.onData((data) => { if (t.started) mnPost({ type: 'menorah:term-write', id, data }); });
   t.term.onResize(({ cols, rows }) => { if (t.started) mnPost({ type: 'menorah:term-resize', id, cols, rows }); });
+  if (window.VnKey) VnKey.attach(t.term, { el: t.host, config: () => GT.vn, onToggle: () => mnPost({ type: 'menorah:vnkey-toggle' }), onForeign: () => mnPost({ type: 'menorah:vnkey-foreign' }) });
   t.term.open(t.host);
   gtFit(t);
   mnPost({ type: 'menorah:term-start', id, cwd, cols: t.term.cols, rows: t.term.rows });
@@ -1815,6 +1818,7 @@ if (window.parent !== window) {
     if (e.source !== window.parent) return;
     const m = e.data || {};
     if (m.type === 'menorah:term-alive') return gtRestore(Array.isArray(m.alive) ? m.alive : []);
+    if (m.type === 'menorah:vnkey') { GT.vn = { method: String(m.method), modern: !!m.modern }; return; }
     const t = GT.tabs.find((x) => x.id === m.id);
     if (!t || !t.term) return;
     if (m.type === 'menorah:term-started') {

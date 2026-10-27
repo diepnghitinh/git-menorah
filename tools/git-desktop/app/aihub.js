@@ -244,7 +244,7 @@ const AIHub = {
         h('p.muted', 'Inference Router for Claude Code: send each subagent task to the right model, and see where turns, tokens and cost go.'),
         h('nav.hub-pagetabs', { role: 'tablist' }, tabs.map(([k, l]) => h(k === this.tab ? 'button.on' : 'button',
           { role: 'tab', 'aria-selected': String(k === this.tab), onclick: () => { if (k !== this.tab) this.openTab(k); } }, l)))),
-      ...(stats ? [this.flowCard()] : open ? this.routerDetail(open) : [this.routerCard(), this.routersList(), this.whereCard()]),
+      ...(stats ? [this.flowCard()] : open ? this.routerDetail(open) : [this.routerCard(), this.safetyCard(), this.routersList(), this.whereCard()]),
     );
     this.mount('hub', page, () => { if (stats && this.report) this.drawFlow(); });
     if (stats) this.loadReport();
@@ -284,6 +284,28 @@ const AIHub = {
         h('label', h('span', 'Upstream URL'), upstream, h('small.muted', 'Empty = the original ANTHROPIC_BASE_URL from ~/.claude/settings.json, the environment, or api.anthropic.com.')),
         h('label', h('span', 'Judge model'), h('div.hub-inline', jp, jm, jmList), h('small.muted', 'Reads a subagent\'s task and sorts it into one task of the project\'s router. The verdict sticks to the subagent: judged once.')),
       ),
+    );
+  },
+
+  // Lượt kiểm tra an toàn (bộ phân loại quyền của auto mode, soi lệnh Bash): mặc định đi thẳng Claude, bật thì router chấm.
+  safetyCard() {
+    const on = this.st.router.safety;
+    const sw = h('input', { type: 'checkbox', checked: on, onchange: async () => {
+      if (await this.save(() => window.menorah.hubRouterSave({ safety: sw.checked }))) {
+        toast(sw.checked ? 'The router now judges safety checks too' : 'Safety checks run on Claude again');
+        this.renderHub();
+      } else sw.checked = !sw.checked;
+    } });
+    return h('section.hub-card.safety-card',
+      h('div.hub-card-head.safety-head', icon('shield'), h('div',
+        h('h2', 'Safety checks'),
+        h('p.muted', 'Before running a command on its own, Claude Code sends a separate turn asking whether that command is safe (the auto mode permission classifier, Bash command checks). By default these turns run on Claude and show as "Safety check" in Statistics.'))),
+      h('div.safety-row',
+        h('div', h('b', 'Let the router judge safety checks'),
+          h('small.muted', on
+            ? 'On: the router judges safety checks too, and they run on the model set for the task they are sorted into. Turns carrying Anthropic safeguards still run on Claude.'
+            : 'Off: safety checks pass through unchanged on Claude. Turning this on costs one judge call per safety check.')),
+        h('label.hub-switch', sw, h('span.hub-slider'))),
     );
   },
 

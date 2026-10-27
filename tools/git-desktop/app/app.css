@@ -185,6 +185,11 @@ main { position: absolute; inset: 0 0 0 calc(var(--rail-w) * var(--rail-z)); }
 .cache-chip:hover { background: var(--hover); color: var(--text); }
 .cache-chip.soon { border-color: transparent; background: var(--warn-soft); color: var(--warn); }
 .cache-chip.cold { border-color: transparent; background: var(--danger-soft); color: var(--danger); }
+/* Công tắc gõ tiếng Việt (VI / EN) của terminal. */
+.vn-chip { height: 20px; min-width: 26px; padding: 0 5px; border: 1px solid var(--border); border-radius: 5px; background: transparent;
+  color: var(--faint); font: 700 10.5px/1 var(--mono); flex: none; }
+.vn-chip:hover { background: var(--hover); color: var(--text); }
+.vn-chip.on { border-color: transparent; background: var(--accent-soft); color: var(--accent); }
 .mode { display: flex; background: var(--sunken); border: 1px solid var(--border); border-radius: 7px; padding: 1px; }
 .mode button { height: 20px; padding: 0 8px; border: 0; border-radius: 5px; font-size: 11.5px; background: transparent; color: var(--muted); font-weight: 600; }
 .mode button.on { background: var(--panel); color: var(--text); box-shadow: 0 1px 2px rgba(var(--shadow-c), .15); }
@@ -202,6 +207,11 @@ main { position: absolute; inset: 0 0 0 calc(var(--rail-w) * var(--rail-z)); }
 
 .node-body { flex: 1; min-height: 0; position: relative; border-radius: 0 0 var(--radius) var(--radius); overflow: hidden; }
 .node.terminal .node-body { background: var(--term); }
+/* Dark mode: terminal tối lẫn vào nền canvas → viền sáng mờ + quầng sáng để tách khỏi nền */
+@media (prefers-color-scheme: dark) {
+  .node.terminal:not(.active, .link-target, .drop) { box-shadow: 0 0 0 1px rgba(255,255,255,.06), 0 0 22px rgba(255,255,255,.09), 0 10px 30px rgba(0,0,0,.35); }
+  .node.terminal.active { box-shadow: 0 0 0 1px var(--accent), 0 0 28px rgba(255,255,255,.13), 0 14px 40px rgba(0,0,0,.4); }
+}
 .term-host { position: absolute; inset: 6px 4px 4px 10px; }
 .term-host .xterm { height: 100%; }
 .term-host .xterm-viewport { background: transparent !important; }
@@ -226,15 +236,25 @@ main { position: absolute; inset: 0 0 0 calc(var(--rail-w) * var(--rail-z)); }
 .node.active .resize.se::after { content: ''; position: absolute; right: 6px; bottom: 6px; width: 8px; height: 8px;
   border-right: 2px solid var(--faint); border-bottom: 2px solid var(--faint); border-radius: 0 0 3px 0; }
 
-.node.note { background: #fff8d6; border-color: #ecd98a; }
-.node.note .node-head { border-bottom-color: #ecd98a; }
-.node.note textarea { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; border-radius: 0 0 var(--radius) var(--radius);
-  background: transparent; resize: none; padding: 10px 12px; font-size: 13.5px; line-height: 1.55; color: #3d3410; box-shadow: none; }
-@media (prefers-color-scheme: dark) {
-  .node.note { background: #2b2714; border-color: #4d4422; }
-  .node.note .node-head { border-bottom-color: #4d4422; }
-  .node.note textarea { color: #efe3b0; }
+/* Ghi chú giữ màu giấy ở cả chế độ sáng lẫn tối: canvas.js đặt --note-bg/-line/-ink theo màu của
+   từng note, ở đây dựng lại bộ token sáng từ ba màu đó cho mọi thứ bên trong (tiêu đề, nút, ô nhập). */
+.node.note {
+  --panel:var(--note-bg); --text:var(--note-ink); --border:var(--note-line); --border-strong:var(--note-line);
+  --muted:color-mix(in srgb, var(--note-ink) 68%, var(--note-bg)); --faint:color-mix(in srgb, var(--note-ink) 45%, var(--note-bg));
+  --hover:color-mix(in srgb, var(--note-ink) 8%, var(--note-bg));
+  --accent:#1f6feb; --accent-soft:#e8f0fe; --danger:#c62f3a; --danger-soft:#fdecee;
+  color-scheme: light; color: var(--text); background: var(--note-bg); border-color: var(--note-line);
 }
+.node.note textarea { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; border-radius: 0 0 var(--radius) var(--radius);
+  background: transparent; resize: none; padding: 10px 12px; font-size: 13.5px; line-height: 1.55; box-shadow: none; }
+.node.note textarea::placeholder { color: var(--faint); }
+.note-dot { width: 12px; height: 12px; border-radius: 50%; border: 1px solid; opacity: .85; }
+.note-colors { position: absolute; top: 38px; right: 6px; z-index: 2; display: flex; gap: 6px; padding: 7px; background: #fff;
+  border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 8px 24px rgba(16,24,40,.16); }
+.note-sw { width: 20px; height: 20px; min-width: 0; padding: 0; border-radius: 50%; background: var(--sw-bg); border: 1.5px solid var(--sw-line); }
+.note-sw:hover { background: var(--sw-bg); transform: scale(1.12); }
+.note-sw.on { box-shadow: 0 0 0 2px #fff, 0 0 0 3.5px var(--accent); }
+.note-sw:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 /* Ảnh kiểu Figma: không khung, tên + nút phía trên, 4 ô vuông ở góc khi chọn. */
 .node.image { background: transparent; border-color: transparent; border-radius: 0; box-shadow: none; }
 .node.image:hover { border-color: var(--accent); }
@@ -274,7 +294,7 @@ main { position: absolute; inset: 0 0 0 calc(var(--rail-w) * var(--rail-z)); }
 .mm-n.running { fill: var(--ok-soft); stroke: var(--ok); }
 .mm-n.idle { fill: var(--accent-soft); stroke: var(--accent); }
 .mm-n.exited { stroke: var(--danger); }
-.mm-n.note { fill: var(--warn-soft); stroke: var(--warn); }
+.mm-n.note { fill: var(--mm-fill); stroke: var(--mm-line); }
 .mm-n.on { stroke: var(--text); stroke-width: 1.5; }
 .mm-view { fill: var(--accent); fill-opacity: .07; stroke: var(--accent); stroke-width: 1.5; }
 
@@ -389,6 +409,8 @@ main { position: absolute; inset: 0 0 0 calc(var(--rail-w) * var(--rail-z)); }
 .set-tabs button { height: 32px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--muted); margin-bottom: -1px; }
 .set-tabs button.on { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
 .set-body { min-height: 220px; }
+.dialog label.check { display: flex; align-items: flex-start; gap: 8px; font-weight: 400; margin: 12px 0 0; }
+.dialog label.check input { width: auto; margin: 2px 0 0; flex: none; }
 .dialog .notice { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 10px 12px; margin-bottom: 12px; border-radius: 8px;
   background: var(--danger-soft); font-size: 12.5px; }
 .dialog .notice b { width: 100%; }
@@ -475,6 +497,11 @@ main { position: absolute; inset: 0 0 0 calc(var(--rail-w) * var(--rail-z)); }
 .hub-card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 20px 22px; margin-bottom: 18px; }
 .hub-card-head h2 { margin: 0; font-size: 16px; }
 .hub-card-head p { margin: 4px 0 14px; font-size: 13px; max-width: 760px; }
+.safety-head { display: flex; gap: 12px; align-items: flex-start; }
+.safety-head > .i { flex: none; width: 20px; height: 20px; margin-top: 1px; color: var(--muted); }
+.safety-row { display: flex; gap: 20px; align-items: center; justify-content: space-between; }
+.safety-row > div { display: flex; flex-direction: column; gap: 3px; font-size: 13px; }
+.safety-row small { font-size: 12px; }
 .hub-card-head.row { display: flex; gap: 20px; align-items: flex-start; justify-content: space-between; }
 .hub-warn { background: var(--warn-soft); color: var(--warn); border-radius: 10px; padding: 10px 14px; margin-bottom: 14px; font-size: 13px; }
 .hub-badge { display: inline-flex; align-items: center; gap: 5px; margin-left: 8px; padding: 1px 8px; border-radius: 999px; background: var(--chip);

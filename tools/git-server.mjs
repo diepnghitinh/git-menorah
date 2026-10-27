@@ -1905,9 +1905,11 @@ function readBody(req) {
 // git-server vào server/tools/ còn gói ở node_modules của app (build-git.sh). Chỉ .js/.css.
 const XTERM_DIR = [join(TOOLS, 'git-desktop', 'node_modules', '@xterm'), resolve(TOOLS, '..', '..', 'node_modules', '@xterm')]
   .find((d) => existsSync(join(d, 'xterm', 'lib', 'xterm.js')));
-const VENDOR_RE = /^\/vendor\/(xterm|addon-fit|addon-unicode11|addon-web-links)\/((?:lib|css)\/[\w.-]+\.(js|css))$/;
+// Bộ gõ tiếng Việt của terminal nằm ở app/vnkey.js của GitMenorah (cùng chỗ với gói xterm).
+const VNKEY = [join(TOOLS, 'git-desktop', 'app', 'vnkey.js'), resolve(TOOLS, '..', '..', 'app', 'vnkey.js')].find(existsSync);
+const VENDOR_RE = /^\/vendor\/(xterm|addon-fit|addon-unicode11|addon-web-links|vnkey)\/((?:lib|css)\/[\w.-]+\.(js|css)|vnkey\.js)$/;
 async function serveVendor(res, m) {
-  const file = XTERM_DIR && join(XTERM_DIR, m[1], m[2]);
+  const file = m[1] === 'vnkey' ? m[2] === 'vnkey.js' && VNKEY : XTERM_DIR && join(XTERM_DIR, m[1], m[2]);
   if (!file || !existsSync(file)) return json(res, 404, { error: 'xterm package not found.' });
   res.writeHead(200, { 'content-type': (m[3] === 'css' ? 'text/css' : 'text/javascript') + '; charset=utf-8', 'cache-control': 'max-age=3600', 'x-content-type-options': 'nosniff' });
   return res.end(await readFile(file));

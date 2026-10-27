@@ -177,6 +177,16 @@ function taskPrompt(body) {
   }
   return '';
 }
+// Lệnh cần soi của lượt kiểm tra an toàn: lời người dùng cuối cùng còn chữ.
+function lastUserPrompt(body) {
+  const msgs = Array.isArray(body.messages) ? body.messages : [];
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    if (asRecord(msgs[i]).role !== 'user') continue;
+    const t = stripReminders(messageText(msgs[i]));
+    if (t) return t;
+  }
+  return '';
+}
 function userTexts(messages) {
   return (Array.isArray(messages) ? messages : []).filter((m) => asRecord(m).role === 'user').map(messageText).join('\n');
 }
@@ -185,8 +195,9 @@ function userTexts(messages) {
 const EXPLORE_SIGNATURE = /file search specialist for Claude Code/i;
 const SAFETY_SIGNATURES = [/security monitor/i, /<severity>/i, /policy spec/i];
 const INJECTION_SIGNATURES = [/command[_ ]injection/i, /prompt[_ ]injection/i];
+const SAFETY_AGENT = 'safety-check';   // agent_type ghi cho lượt kiểm tra an toàn được chấm
 
-// → { router: 'tasks', task } | { router: 'active', agentType } | { router: 'active', task: 'unclassified' }
+// → { router: 'tasks', task, safeguards? } | { router: 'active', agentType } | { router: 'active', task: 'unclassified' }
 // 'active' = router gán cho project của phiên (Software Engineering / AI Engineer), onMessages điền vào.
 function classify(headers, body) {
   const system = systemText(body.system);
@@ -198,7 +209,8 @@ function classify(headers, body) {
   const small = hint ? hint === 'auxiliary' : !subagent && /haiku/i.test(String(body.model || ''));
 
   const stops = Array.isArray(body.stop_sequences) ? body.stop_sequences : [];
-  if (body.safeguards != null || stops.some((s) => /severity/i.test(String(s)))) return { router: 'tasks', task: 'safety' };
+  if (body.safeguards != null) return { router: 'tasks', task: 'safety', safeguards: true };
+  if (stops.some((s) => /severity/i.test(String(s)))) return { router: 'tasks', task: 'safety' };
   if (small && [...SAFETY_SIGNATURES, ...INJECTION_SIGNATURES].some((re) => re.test(`${system}\n${userTexts(body.messages)}`))) return { router: 'tasks', task: 'safety' };
   if (subagent && SAFETY_SIGNATURES.some((re) => re.test(system))) return { router: 'tasks', task: 'safety' };
 
@@ -220,7 +232,7 @@ function createStore(dir) {
   try { cfg = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { cfg = {}; }
   cfg.providers = asRecord(cfg.providers);
   for (const p of Object.values(cfg.providers)) if (p && p.key && !p.addedAt) p.addedAt = Date.now();   // bản cũ: có khóa = đã thêm
-  cfg.router = { enabled: false, upstream: '', judge: { provider: 'claude', model: 'claude-haiku-4-5' }, tasks: {}, ...asRecord(cfg.router) };
+  cfg.router = { enabled: false, safety: false, upstream: '', judge: { provider: 'claude', model: 'claude-haiku-4-5' }, tasks: {}, ...asRecord(cfg.router) };
   cfg.router.projects = asRecord(cfg.router.projects);   // projectId → id router
   cfg.router.global ??= null;                             // router cho Claude Code ngoài app
   cfg.proxy = asRecord(cfg.proxy);                        // { port, token } cố định
@@ -484,11 +496,14 @@ function createHub({ app, handle, log = () => {}, projects = () => [] }) {
     if (!body || typeof body !== 'object') return forward(req, res, { pathAndQuery, body: raw });
 
     const route = classify(req.headers, body);
+    // Bật "chấm lượt kiểm tra an toàn": chấm như một subagent; lượt có safeguards của Anthropic vẫn để Claude.
+    const safety = route.task === 'safety' && !route.safeguards && store.cfg.router.safety;
+    if (safety) Object.assign(route, { router: 'active', agentType: SAFETY_AGENT });
     if (route.router === 'active') route.router = router.id;
     const row = { project, router: route.router, task: route.task, agentType: route.agentType, session: headerOf(req.headers, 'x-claude-code-session-id') };
     let send = raw, retry = null;
     if (route.agentType) {
-      const prompt = taskPrompt(body);
+      const prompt = safety ? lastUserPrompt(body) : taskPrompt(body);
       const v = prompt ? await verdictFor(router, route.agentType, prompt, req.headers, project) : { task: null, outcome: 'no_match' };
       row.task = v.task || 'unmatched';
       row.outcome = v.outcome;
@@ -684,7 +699,7 @@ function createHub({ app, handle, log = () => {}, projects = () => [] }) {
       }),
       routers: ROUTERS,
       claudeModels: CLAUDE_MODELS,
-      router: { enabled: !!r.enabled, upstream: r.upstream, judge: r.judge, tasks: r.tasks, projects: r.projects, global: r.global },
+      router: { enabled: !!r.enabled, safety: !!r.safety, upstream: r.upstream, judge: r.judge, tasks: r.tasks, projects: r.projects, global: r.global },
       claudeConfig: claudeConfig(),
       projects: projectList(),
       upstream: upstream(),
@@ -746,6 +761,7 @@ function createHub({ app, handle, log = () => {}, projects = () => [] }) {
   handle('ws:hub-router-save', async (e, x) => {
     const r = store.cfg.router;
     if (typeof x?.enabled === 'boolean') r.enabled = x.enabled;
+    if (typeof x?.safety === 'boolean') r.safety = x.safety;
     for (const [pid, rid] of Object.entries(asRecord(x?.projects))) {
       if (!/^[\w-]{1,64}$/.test(pid) || pid === OUTSIDE) continue;
       if (ROUTERS.some((d) => d.id === rid)) r.projects[pid] = rid;

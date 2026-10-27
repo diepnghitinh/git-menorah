@@ -17,6 +17,18 @@ const AGENTS = {
 };
 const MIN = { terminal: [360, 220], note: [180, 120], image: [40, 30] };
 const DEFAULT_SIZE = { terminal: [720, 460], note: [260, 200], image: [360, 260] };
+// Màu giấy ghi chú: [nền, viền, chữ]. Cố định, không theo chế độ sáng / tối — note giữ đúng màu
+// người dùng chọn. Note cũ chưa có n.color thì là vàng.
+const NOTE_COLORS = {
+  yellow: { label: 'Yellow', c: ['#fff8d6', '#ecd98a', '#3d3410'] },
+  orange: { label: 'Orange', c: ['#ffead6', '#f1bf8f', '#4a2a0e'] },
+  pink: { label: 'Pink', c: ['#fde4ec', '#efb2c5', '#4b1a2b'] },
+  purple: { label: 'Purple', c: ['#ede7fb', '#c7b8ee', '#2f2452'] },
+  blue: { label: 'Blue', c: ['#e3eefc', '#a9c7ee', '#13304f'] },
+  green: { label: 'Green', c: ['#e2f3e4', '#a6d6ac', '#163a1c'] },
+  gray: { label: 'Gray', c: ['#eef0f3', '#cfd4dc', '#1b2330'] },
+};
+const noteColor = (n) => (NOTE_COLORS[n.color] || NOTE_COLORS.yellow).c;
 const XTERM_THEME = {
   background: '#11151c', foreground: '#d7dde6', cursor: '#d7dde6', cursorAccent: '#11151c', selectionBackground: '#33415a',
   black: '#1b2330', red: '#f2707a', green: '#4cc38a', yellow: '#e0a83a', blue: '#4c8dff', magenta: '#c38cf2', cyan: '#4cc3c3', white: '#d7dde6',
@@ -190,7 +202,8 @@ class Canvas {
     const { s, x0, y0 } = this.mmMap;
     const rect = (b, cls, rx) => `<rect class="${cls}" rx="${rx}" x="${((b.x - x0) * s).toFixed(1)}" y="${((b.y - y0) * s).toFixed(1)}" width="${Math.max(2, b.w * s).toFixed(1)}" height="${Math.max(2, b.h * s).toFixed(1)}"`;
     const cls = (n) => ['mm-n', n.kind === 'terminal' ? this.views.get(n.id)?.status || '' : n.kind, n.id === this.active ? 'on' : ''].join(' ');
-    this.mmSvg.innerHTML = ns.map((n) => `${rect(n, cls(n), 2)}><title>${esc(n.title)}</title></rect>`).join('')
+    const paint = (n) => (n.kind === 'note' ? ` style="--mm-fill:${noteColor(n)[0]};--mm-line:${noteColor(n)[1]}"` : '');
+    this.mmSvg.innerHTML = ns.map((n) => `${rect(n, cls(n), 2)}${paint(n)}><title>${esc(n.title)}</title></rect>`).join('')
       + `${rect(view, 'mm-view', 3)}/>`;
   }
 
@@ -605,6 +618,7 @@ class TerminalView extends NodeView {
       h(`span.agent-mark.${n.agent}`, AGENTS[n.agent].mark), this.dot, this.titleEl,
       rel ? h('span.node-cwd', { title: n.cwd }, rel) : null,
       n.agent === 'claude' ? (this.cacheEl = h('button.cache-chip', { hidden: true, onclick: () => this.compact() }, icon('clock'), this.cacheTxt = h('span'))) : null,
+      this.vnEl = h('button.vn-chip', { hidden: true, onclick: () => { vnInput.toggle(); this.focus(); } }),
       isAgent ? h('div.mode', this.modeBtns) : null,
       ...this.headButtons(),
     ].filter(Boolean));
@@ -629,6 +643,10 @@ class TerminalView extends NodeView {
     try { this.term.loadAddon(new WebLinksAddon.WebLinksAddon((e, url) => window.open(url))); } catch {}
     this.term.onData((d) => { if (!this.stopped) window.menorah.ptyWrite(n.id, d); });
     this.term.onResize(({ cols, rows }) => { if (!this.stopped) window.menorah.ptyResize(n.id, cols, rows); });
+    // Gõ tiếng Việt (Telex / VNI) ngay trong xterm; nhường bộ gõ của máy nếu có.
+    VnKey.attach(this.term, { el: this.host, config: vnInput.config, onToggle: () => vnInput.toggle(), onForeign: () => vnInput.foreignSeen() });
+    this.offVn = vnInput.listen(() => this.syncVn());
+    this.syncVn();
 
     // Dán tệp / ảnh: tệp đã copy (Finder, "Copy Media" của Telegram…) → đường dẫn của nó; ảnh
     // không có tệp (ảnh chụp, Copy Image) → lưu vào uploads/ rồi gửi đường dẫn. Clipboard có chữ
@@ -778,6 +796,15 @@ class TerminalView extends NodeView {
 
   focus() { if (this.n.view === 'chat' && this.chat) this.chat.input.focus(); else this.term.focus(); }
 
+  // Nút VI / EN trên header: ẩn khi tắt gõ tiếng Việt hoặc đang nhường bộ gõ của máy.
+  syncVn() {
+    const c = vnInput.cfg, keys = this.c.info.platform === 'darwin' ? '⌃⇧' : 'Ctrl+Shift';
+    this.vnEl.hidden = c.method === 'off' || vnInput.yielded();
+    this.vnEl.textContent = c.on ? 'VI' : 'EN';
+    this.vnEl.classList.toggle('on', c.on);
+    this.vnEl.title = `${c.on ? 'Vietnamese' : 'English'} typing (${c.method === 'vni' ? 'VNI' : 'Telex'}) — click or press ${keys} to switch`;
+  }
+
   // Dải sub agent dưới thân node: thu gọn là một dòng đếm, mở ra là danh sách từng sub agent
   // (loại, mô tả, bước gần nhất, số bước · thời gian · token).
   setSubagents(subs) {
@@ -823,6 +850,7 @@ class TerminalView extends NodeView {
 
   dispose(keepSession) {
     this.ro.disconnect();
+    this.offVn();
     this.chat?.stop();
     if (keepSession) window.menorah.ptyDetach(this.n.id); else window.menorah.ptyKill(this.n.id);
     this.term.dispose();
@@ -834,13 +862,50 @@ class TerminalView extends NodeView {
 class NoteView extends NodeView {
   constructor(canvas, n) {
     super(canvas, n);
-    this.head.append(this.titleEl, ...this.headButtons());
+    this.dot = h('span.note-dot');
+    this.colorBtn = h('button.node-btn', { title: 'Note color', onclick: () => this.toggleColors() }, this.dot);
+    this.head.append(this.titleEl, this.colorBtn, ...this.headButtons());
+    this.colors = h('div.note-colors', { hidden: true, role: 'menu' }, Object.entries(NOTE_COLORS).map(([k, { label, c }]) =>
+      h('button.note-sw', { role: 'menuitemradio', title: label, dataset: { color: k }, style: `--sw-bg:${c[0]};--sw-line:${c[1]}`, onclick: () => this.setColor(k) })));
+    this.colors.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Escape') this.toggleColors(false); });
+    this.el.append(this.colors);
+    this.paint();
     this.ta = h('textarea', { placeholder: 'Note… Link it to an agent so the agent can read it.' });
     this.ta.value = n.text || '';
     this.ta.addEventListener('input', () => { n.text = this.ta.value; this.c.saveSoon(); });
     this.ta.addEventListener('keydown', (e) => e.stopPropagation());
     this.body.append(this.ta);
   }
+  // Màu đặt bằng biến CSS ngay trên node; app.css dựng lại bộ token sáng của note từ ba biến này.
+  paint() {
+    const [bg, line, ink] = noteColor(this.n);
+    this.el.style.setProperty('--note-bg', bg);
+    this.el.style.setProperty('--note-line', line);
+    this.el.style.setProperty('--note-ink', ink);
+    this.dot.style.cssText = `background:${line};border-color:${ink}`;
+    const cur = NOTE_COLORS[this.n.color] ? this.n.color : 'yellow';
+    for (const b of this.colors.children) b.classList.toggle('on', b.dataset.color === cur);
+  }
+
+  setColor(k) {
+    this.toggleColors(false);
+    if (k === (this.n.color || 'yellow')) return;
+    this.n.color = k;
+    this.paint();
+    this.c.changed();
+  }
+
+  // Bảng màu đóng khi chọn, Esc, hoặc bấm ra ngoài bảng.
+  toggleColors(open = this.colors.hidden) {
+    this.colors.hidden = !open;
+    document.removeEventListener('pointerdown', this.outside, true);
+    if (!open) return;
+    this.outside = (e) => { if (!this.colors.contains(e.target) && !this.colorBtn.contains(e.target)) this.toggleColors(false); };
+    document.addEventListener('pointerdown', this.outside, true);
+    this.colors.querySelector('.on')?.focus();
+  }
+
+  dispose() { this.toggleColors(false); super.dispose(); }
   focus() { this.ta.focus(); }
   acceptPaths(paths) { this.ta.value += (this.ta.value && !this.ta.value.endsWith('\n') ? '\n' : '') + paths.join('\n'); this.n.text = this.ta.value; this.c.saveSoon(); }
 }
