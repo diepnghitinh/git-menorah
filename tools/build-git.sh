@@ -95,6 +95,9 @@ mkdir -p "$STAGE/node_modules/@xterm"
 for m in xterm addon-fit addon-unicode11 addon-web-links; do
   cp -R "node_modules/@xterm/$m" "$STAGE/node_modules/@xterm/"
 done
+# Monaco (trình soạn tệp của chế độ IDE, git-server phục vụ ở /vendor/monaco/): chỉ cần bản min/.
+mkdir -p "$STAGE/node_modules/monaco-editor"
+cp -R node_modules/monaco-editor/min node_modules/monaco-editor/package.json node_modules/monaco-editor/LICENSE "$STAGE/node_modules/monaco-editor/"
 
 # menorah-agentd → build/app/bin/ (agentd.cjs tìm ở <app>/bin/). Không cgo nên dựng chéo được.
 # universal: dựng hai bản rồi gộp bằng lipo.

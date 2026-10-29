@@ -57,6 +57,8 @@ contextBridge.exposeInMainWorld('menorah', {
 
   // Bộ gõ tiếng Việt đang chạy trên máy (UniKey, OpenKey…) hoặc null.
   vnIme: () => ipcRenderer.invoke('ws:vn-ime'),
+  // Chặn bộ gõ của máy khi terminal đang gõ bằng bộ gõ tích hợp (macOS).
+  secureInput: (on) => ipcRenderer.send('ws:secure-input', !!on),
 
   // Giới hạn CPU / RAM chung cho mọi terminal.
   limits: () => ipcRenderer.invoke('ws:limits'),
@@ -78,10 +80,14 @@ contextBridge.exposeInMainWorld('menorah', {
   hubRouterSave: (x) => ipcRenderer.invoke('ws:hub-router-save', x),
   hubReport: (days, project) => ipcRenderer.invoke('ws:hub-report', days, project),
   hubReportClear: () => ipcRenderer.invoke('ws:hub-report-clear'),
+  hubUsage: (session) => ipcRenderer.invoke('ws:hub-usage', session),
   // Ghi / trả lại ~/.claude/settings.json (ANTHROPIC_BASE_URL → proxy của Git Menorah).
   hubClaudeInstall: () => ipcRenderer.invoke('ws:hub-claude-install'),
   hubClaudeRestore: () => ipcRenderer.invoke('ws:hub-claude-restore'),
+  hubHookInstall: () => ipcRenderer.invoke('ws:hub-hook-install'),
+  hubHookRemove: () => ipcRenderer.invoke('ws:hub-hook-remove'),
   hubJudgeTest: (prompt, router) => ipcRenderer.invoke('ws:hub-judge-test', prompt, router),
+
 
   onCommand: listeners('ws:command'),
 });

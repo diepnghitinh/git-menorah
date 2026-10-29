@@ -247,7 +247,7 @@ async function agentList() {
   const info = await agentd.call('agents', list.map(({ node }) => ({ nodeId: node.id, agent: node.agent, sessionId: node.sessionId || '' })));
   return list.map(({ project, canvas, node }) => ({
     nodeId: node.id, projectId: project.id, projectName: project.name, canvasId: canvas.id, canvasName: canvas.name,
-    title: node.title, agent: node.agent, cwd: path.resolve(node.cwd || project.cwd),
+    title: node.title, agent: node.agent, sessionId: node.sessionId || '', cwd: path.resolve(node.cwd || project.cwd),
     status: info[node.id]?.status || 'stopped', last: info[node.id]?.last || '', subs: info[node.id]?.subs || 0,
   }));
 }
@@ -619,6 +619,24 @@ async function setup({ app, gitOrigin, api, settings }) {
   });
 
   handle('ws:vn-ime', () => systemVnIme());
+  // Terminal đang focus và bộ gõ tích hợp được ưu tiên: bật Secure Keyboard Entry (macOS) để
+  // GoTiengViet, OpenKey… không đọc được phím nữa. Chỉ giữ khi cửa sổ xin nó đang focus —
+  // rời cửa sổ là tắt, quay lại thì áp lại yêu cầu của cửa sổ đó.
+  if (process.platform === 'darwin') {
+    const wants = new Map();   // webContents.id → true
+    const apply = () => {
+      const w = BrowserWindow.getFocusedWindow();
+      app.setSecureKeyboardEntryEnabled(!!w && !w.isDestroyed() && wants.has(w.webContents.id));
+    };
+    on('ws:secure-input', (e, want) => {
+      const id = e.sender.id;
+      if (want) { if (!wants.has(id)) e.sender.once('destroyed', () => { wants.delete(id); apply(); }); wants.set(id, true); }
+      else wants.delete(id);
+      apply();
+    });
+    app.on('browser-window-focus', apply);
+    app.on('browser-window-blur', apply);
+  }
 
   // Giới hạn CPU / RAM (agentd): áp cho mọi phiên PTY, kể cả khay Terminal của tab Git.
   handle('ws:limits', () => agentd.call('limits'));

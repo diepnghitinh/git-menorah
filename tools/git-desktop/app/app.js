@@ -40,10 +40,19 @@ const app = {
     $('#resume-all').addEventListener('click', () => this.canvas.resumeAll());
     this.bindShots();
     this.bindGitFrame();
+    AgentDock.init(this);
     // Bộ gõ của máy có thể vừa bật / tắt khi người dùng ở app khác: dò lại mỗi lần quay về.
     vnInput.probe();
     window.addEventListener('focus', () => vnInput.probe());
-    vnInput.listen(() => this.postGit({ type: 'menorah:vnkey', ...vnInput.config() }));
+    vnInput.listen(() => this.postGit({ type: 'menorah:vnkey', ...vnInput.config(), term: vnInput.config('term') }));
+    // Plugin gõ tiếng Việt cho mọi ô nhập của app (note, chat, đổi tên…); terminal gắn riêng.
+    // Ô soạn của khung Chat là prompt của agent: theo luật của terminal (macOS luôn dùng bộ gõ tích hợp).
+    const isPrompt = (t) => t?.tagName === 'TEXTAREA' && !!t.closest('.chat .composer');
+    VnKey.attachFields(document, { config: (t) => vnInput.config(isPrompt(t) ? 'term' : 'field'), onToggle: () => vnInput.toggle(), onForeign: () => vnInput.foreignSeen() });
+    // Terminal canvas / ô soạn Chat đang focus → vnInput chặn bộ gõ của máy khi cần (khay của tab Git báo qua postMessage).
+    const isTerm = (t) => !!t?.classList?.contains('xterm-helper-textarea') || isPrompt(t);
+    document.addEventListener('focusin', (e) => vnInput.termFocus('app', isTerm(e.target)));
+    document.addEventListener('focusout', (e) => { if (!e.relatedTarget) vnInput.termFocus('app', false); });
     setInterval(() => this.pollStats(), 2000);
     setInterval(() => this.pushAgents(), 3000);
 
@@ -65,17 +74,19 @@ const app = {
   setView(view) {
     const agents = view === 'agents';
     if (view === 'stats') { AIHub.tab = 'stats'; view = 'hub'; }   // bản cũ: Statistics là mục riêng trên rail
-    if (!['canvas', 'git', 'hub', 'settings'].includes(view)) view = agents ? 'git' : 'canvas';
+    if (!['canvas', 'git', 'hub', 'plugins', 'settings'].includes(view)) view = agents ? 'git' : 'canvas';
     this.view = view;
     $$('.rail-btn').forEach((t) => t.classList.toggle('on', t.dataset.view === view));
-    for (const v of ['canvas', 'git', 'hub', 'settings']) $(`#view-${v}`).hidden = v !== view;
+    for (const v of ['canvas', 'git', 'hub', 'plugins', 'settings']) $(`#view-${v}`).hidden = v !== view;
     if (view === 'hub' || view === 'settings') AIHub.show(view);
+    if (view === 'plugins') Plugins.show();
     if (view === 'git' && !this.gitLoaded) {
       $('#git-frame').src = `${this.info.gitOrigin}/git.html?git=${encodeURIComponent(this.gitQuery)}`;
       this.gitLoaded = true;
     }
     if (agents) { this.wantAgentsTab = true; this.postGit({ type: 'menorah:side', tab: 'agents' }); }
     if (view === 'git') this.pushAgents();
+    AgentDock.sync();
     if (view === 'canvas') requestAnimationFrame(() => { for (const v of this.canvas.views.values()) v.fit?.(); });
   },
 
@@ -374,7 +385,6 @@ const app = {
       const panes = {
         accounts: ['Accounts', (b) => this.accountsPane(b, close)],
         limits: ['Terminal limits', (b) => this.limitsPane(b, close)],
-        vietnamese: ['Vietnamese typing', (b) => this.vnPane(b, close)],
       };
       const tabs = h('div.set-tabs', { role: 'tablist' });
       const body = h('div.set-body');
@@ -442,8 +452,8 @@ const app = {
     const form = () => {
       err.textContent = '';
       const service = h('select', ...Object.entries(SVC).map(([k, s]) => h('option', { value: k }, s.label)));
-      const host = h('input', { type: 'text', spellcheck: false, placeholder: 'git.example.com' });
-      const email = h('input', { type: 'text', spellcheck: false, placeholder: 'you@example.com' });
+      const host = h('input', { type: 'text', spellcheck: false, placeholder: 'git.example.com', dataset: { novn: '' } });
+      const email = h('input', { type: 'text', spellcheck: false, placeholder: 'you@example.com', dataset: { novn: '' } });
       const user = h('input', { type: 'text', spellcheck: false });
       const token = h('input', { type: 'password', spellcheck: false, autocomplete: 'off' });
       const proto = h('select', h('option', { value: 'https' }, 'HTTPS'), h('option', { value: 'ssh' }, 'SSH (uses your SSH key)'));
@@ -543,34 +553,6 @@ const app = {
     return () => { clearInterval(poll); body.onkeydown = null; };
   },
 
-  // Gõ tiếng Việt trong terminal (app/vnkey.js). Đổi là lưu ngay, mọi terminal dùng luôn.
-  async vnPane(body, close) {
-    const c = vnInput.cfg, keys = this.info.platform === 'darwin' ? '⌃⇧ (Control + Shift)' : 'Ctrl + Shift';
-    const status = h('div.limit-now');
-    const paint = () => {
-      status.textContent = vnInput.cfg.method === 'off' ? 'Built-in Vietnamese typing is off.'
-        : vnInput.system ? `${vnInput.system} is running on this computer${vnInput.cfg.auto ? ' — the built-in typing stays off while it runs.' : '. Turn it off (or switch it to English) so the two do not add tone marks twice.'}`
-        : vnInput.yielded() ? 'Another Vietnamese keyboard is typing in the terminal — the built-in typing paused. Press ' + keys + ' to take over again.'
-        : `No Vietnamese keyboard app found — terminals use the built-in ${vnInput.cfg.method === 'vni' ? 'VNI' : 'Telex'} typing (${vnInput.cfg.on ? 'VI' : 'EN'} now).`;
-    };
-    const method = h('select', { onchange: () => vnInput.set({ method: method.value, on: true }) },
-      [['off', 'Off'], ['telex', 'Telex — aa â · dd đ · s f r x j tones'], ['vni', 'VNI — 6 ^ · 7 ơ ư · 8 ă · 9 đ · 1–5 tones']]
-        .map(([v, label]) => h('option', { value: v, selected: c.method === v }, label)));
-    const check = (key, label) => h('label.check', h('input', { type: 'checkbox', checked: c[key], onchange: (e) => vnInput.set({ [key]: e.target.checked }) }), h('span', label));
-    const off = vnInput.listen(paint);
-    paint();
-    vnInput.probe();
-    body.replaceChildren(
-      h('p', `Type Vietnamese straight into terminals and agent prompts, without a keyboard app. Press ${keys} in a terminal, or click VI / EN on its title bar, to switch between Vietnamese and English.`),
-      h('label.field', h('span', 'Typing method'), method),
-      check('auto', 'Turn off when this computer already has a Vietnamese keyboard (UniKey, OpenKey, EVKey, GoTiengViet, XKey, macOS Vietnamese input…)'),
-      check('modern', 'Place tone marks the new way: hoà, thuỷ (instead of hòa, thủy)'),
-      status,
-      h('div.actions', h('button.primary', { onclick: () => close(true) }, 'Done')),
-    );
-    return off;
-  },
-
   // ─── Clone from URL ─────────────────────────────────────────────────────
   // Paste a URL or pick a repository from a signed-in account. The Git server runs `git clone`
   // in the background and adds the result to the Git tab; `tab` also opens a canvas tab on it.
@@ -582,8 +564,8 @@ const app = {
     const hostOf = (u) => (u.match(/^[a-z+]+:\/\/(?:[^@/]*@)?([^/:]+)/i) || u.match(/^[^@/\s]+@([^:/\s]+):/) || [])[1]?.toLowerCase() || '';
     const job = await modal((d, close) => {
       d.classList.add('clone');
-      const url = h('input', { type: 'text', spellcheck: false, placeholder: 'https://github.com/owner/repo.git  or  git@github.com:owner/repo.git' });
-      const parent = h('input', { type: 'text', spellcheck: false, value: (st.cloneDir || this.project?.cwd || this.info.home).replace(this.info.home, '~') });
+      const url = h('input', { type: 'text', spellcheck: false, placeholder: 'https://github.com/owner/repo.git  or  git@github.com:owner/repo.git', dataset: { novn: '' } });
+      const parent = h('input', { type: 'text', spellcheck: false, dataset: { novn: '' }, value: (st.cloneDir || this.project?.cwd || this.info.home).replace(this.info.home, '~') });
       const name = h('input', { type: 'text', spellcheck: false, placeholder: 'repo' });
       const as = h('select');
       const asF = h('label.field', h('span', 'Sign in as'), as);
@@ -693,15 +675,27 @@ const app = {
       const m = e.data || {};
       if (m.type === 'menorah:ready') {
         this.gitReady = true;
-        this.postGit({ type: 'menorah:vnkey', ...vnInput.config() });
+        AgentDock.mode(false);   // trang vừa tải lại: chờ nó báo chế độ
+        this.postGit({ type: 'menorah:vnkey', ...vnInput.config(), term: vnInput.config('term') });
         if (this.wantAgentsTab) this.postGit({ type: 'menorah:side', tab: 'agents' });
+        AgentDock.post();
         this.pushAgents();
+        if (this.pendingDiff) { this.postGit(this.pendingDiff); this.pendingDiff = null; }
       } else if (m.type === 'menorah:open-node' && typeof m.nodeId === 'string') {
         this.goNode(String(m.projectId), m.nodeId, m.canvasId);
+      } else if (m.type === 'menorah:chat-agent' && typeof m.nodeId === 'string') {
+        AgentDock.open(m.nodeId);
+      } else if (m.type === 'menorah:timeline-req' && Array.isArray(m.nodes)) {
+        const nodes = m.nodes.filter((x) => typeof x === 'string').slice(0, 50);
+        Timeline.collect(nodes).then((turns) => this.postGit({ type: 'menorah:timeline', id: m.id, turns }));
+      } else if (m.type === 'menorah:mode') {
+        AgentDock.mode(m.ide === true, Array.isArray(m.roots) ? m.roots.filter((x) => typeof x === 'string').slice(0, 200) : null);
       } else if (m.type === 'menorah:new-agent' && ['claude', 'codex', 'shell'].includes(m.agent) && typeof m.cwd === 'string' && /^(\/|[A-Za-z]:[\\/])/.test(m.cwd)) {
         this.newNode(m.agent, m.cwd);
       } else if (m.type === 'menorah:clone') {
         this.cloneRepo({});
+      } else if (m.type === 'menorah:bar-h' && Number.isFinite(m.h) && m.h >= 30 && m.h <= 120) {
+        $('#git-dock').style.setProperty('--dock-head-h', `${m.h}px`);
       } else if (m.type === 'menorah:side-tab') {
         this.wantAgentsTab = m.tab === 'agents';
       } else if (m.type === 'menorah:win-drag' && ['start', 'move', 'end'].includes(m.phase)) {
@@ -714,6 +708,8 @@ const app = {
         vnInput.toggle();
       } else if (m.type === 'menorah:vnkey-foreign') {
         vnInput.foreignSeen();
+      } else if (m.type === 'menorah:vnkey-term-focus') {
+        vnInput.termFocus('git', !!m.on);
       } else if (typeof m.type === 'string' && m.type.startsWith('menorah:term-')) {
         this.gitTerm(m);
       }
@@ -749,9 +745,23 @@ const app = {
     if (this.gitReady) $('#git-frame').contentWindow.postMessage(msg, this.info.gitOrigin);
   },
 
+  // Mở diff WIP của một tệp (đường dẫn tuyệt đối) ở chế độ IDE của tab Project — từ khung tệp đã
+  // sửa của Chat; nodeId: agent đã sửa nó, mở luôn ở khung Chat cạnh đó. path = null: tab Review
+  // (mọi thay đổi) của worktree chứa cwd. follow: khung Chat của IDE tự gửi khi agent vừa sửa tệp — không đổi màn hình.
+  reviewFile(path, { follow = false, nodeId = null, cwd = '' } = {}) {
+    const msg = path ? { type: 'menorah:open-diff', path, follow } : { type: 'menorah:open-review', cwd };
+    if (follow) return this.postGit(msg);
+    this.setView('git');
+    if (nodeId && AgentDock.a?.nodeId !== nodeId) AgentDock.open(nodeId, { focus: false });
+    if (this.gitReady) this.postGit(msg); else this.pendingDiff = msg;
+  },
+
   async pushAgents() {
     if (!this.gitReady || this.view !== 'git' || document.hidden) return;
-    try { this.postGit({ type: 'menorah:agents', agents: await window.menorah.agents(), project: this.project?.id || null }); } catch {}
+    let agents;
+    try { agents = await window.menorah.agents(); } catch { return; }
+    this.postGit({ type: 'menorah:agents', agents, project: this.project?.id || null });
+    AgentDock.update(agents);
   },
 
   // ─── Ảnh vừa chụp ───────────────────────────────────────────────────────

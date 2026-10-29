@@ -28,6 +28,7 @@ const https = require('node:https');
 const os = require('node:os');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const { execFile } = require('node:child_process');
 
 const ANTHROPIC = 'https://api.anthropic.com';
 const MAX_BODY = 64 << 20;
@@ -36,8 +37,16 @@ const JUDGE_MAX_TOKENS = 512;
 const MIN_CONFIDENCE = 0.5;          // Jev chắc dưới mức này = không khớp (như ROUTER_MIN_CONFIDENCE)
 const VERDICT_CACHE = 2000;
 const PROMPT_HEAD = 1200, PROMPT_TAIL = 800;
+const DIRECT = 'direct';          // router ghi cho lượt đi thẳng (project chưa gán router)
 const OUTSIDE = 'outside';        // "project" của lượt từ Claude Code ngoài app (qua settings.json)
 const PROXY_URL_RE = /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?\/t\//;
+// Hook SubagentStart (theo developer-portal/claude/install.mjs): subagent có sẵn của Claude Code.
+// Matcher đúng chữ, không dùng regex. Hook khác trong SubagentStart (developer-portal, nodeterm…) giữ nguyên.
+const HOOK_MATCHERS = ['Explore', 'general-purpose'];
+const HOOK_TIMEOUT_SECONDS = 10;
+const HOOK_SCRIPT_RE = /ai-hub[\\/]hooks[\\/]subagent-start\.sh/;
+const HOOK_PROBE = 'git-menorah-probe';   // agent_id của lượt tự kiểm lúc cài: không ghi, không nhét chỉ dẫn
+const CAUGHT_MAX = 500;
 
 // ─── Nhà cung cấp ──────────────────────────────────────────────────────────
 // Gốc API kiểu OpenAI (`<gốc>/chat/completions`, `<gốc>/models`); TypeSafe gọi `<gốc>/systemone`.
@@ -199,7 +208,14 @@ const SAFETY_AGENT = 'safety-check';   // agent_type ghi cho lượt kiểm tra 
 
 // → { router: 'tasks', task, safeguards? } | { router: 'active', agentType } | { router: 'active', task: 'unclassified' }
 // 'active' = router gán cho project của phiên (Software Engineering / AI Engineer), onMessages điền vào.
+// Claude Code ≥ 2.1.31x gắn `safeguards` (cyber safeguards của Anthropic) vào cả lượt main loop:
+// trường này không có nghĩa là lượt kiểm tra an toàn, chỉ đánh dấu để không đưa lượt sang chấm.
 function classify(headers, body) {
+  const route = classifyTurn(headers, body);
+  return body.safeguards != null ? { ...route, safeguards: true } : route;
+}
+
+function classifyTurn(headers, body) {
   const system = systemText(body.system);
   const hint = headerOf(headers, 'x-claude-code-request-class').toLowerCase();
   const agentType = headerOf(headers, 'x-claude-code-agent-type');
@@ -209,7 +225,6 @@ function classify(headers, body) {
   const small = hint ? hint === 'auxiliary' : !subagent && /haiku/i.test(String(body.model || ''));
 
   const stops = Array.isArray(body.stop_sequences) ? body.stop_sequences : [];
-  if (body.safeguards != null) return { router: 'tasks', task: 'safety', safeguards: true };
   if (stops.some((s) => /severity/i.test(String(s)))) return { router: 'tasks', task: 'safety' };
   if (small && [...SAFETY_SIGNATURES, ...INJECTION_SIGNATURES].some((re) => re.test(`${system}\n${userTexts(body.messages)}`))) return { router: 'tasks', task: 'safety' };
   if (subagent && SAFETY_SIGNATURES.some((re) => re.test(system))) return { router: 'tasks', task: 'safety' };
@@ -237,6 +252,7 @@ function createStore(dir) {
   cfg.router.global ??= null;                             // router cho Claude Code ngoài app
   cfg.proxy = asRecord(cfg.proxy);                        // { port, token } cố định
   cfg.install ??= null;                                   // đã ghi ~/.claude/settings.json
+  cfg.hook ??= null;                                      // đã gắn hook SubagentStart vào ~/.claude/settings.json
   delete cfg.router.active;                               // bản cũ: một router chung cho mọi phiên
   for (const t of TASKS) cfg.router.tasks[t.id] = { claude: t.claude, target: null, ...asRecord(cfg.router.tasks[t.id]) };
   const save = () => {
@@ -284,11 +300,29 @@ function openDb(dir) {
       ms INTEGER
     );
     CREATE INDEX IF NOT EXISTS turns_ts ON turns(ts);
+    -- Subagent bắt được qua hook SubagentStart (không phải lượt API: không token, không chi phí).
+    CREATE TABLE IF NOT EXISTS subagents (
+      id INTEGER PRIMARY KEY,
+      ts INTEGER NOT NULL,
+      session TEXT,
+      project TEXT,
+      agent_id TEXT,
+      agent_type TEXT
+    );
+    CREATE INDEX IF NOT EXISTS subagents_ts ON subagents(ts);
   `);
   if (!db.prepare('PRAGMA table_info(turns)').all().some((c) => c.name === 'project')) db.exec('ALTER TABLE turns ADD COLUMN project TEXT');
   const insert = db.prepare(`INSERT INTO turns (ts, session, project, router, task, agent_type, model, provider, judged, outcome, status, input, output, cache_read, cache_write, cost, ms)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  const insertSub = db.prepare('INSERT INTO subagents (ts, session, project, agent_id, agent_type) VALUES (?, ?, ?, ?, ?)');
   return {
+    recordSubagent(r) {
+      try { insertSub.run(Date.now(), r.session || null, r.project || null, r.agentId || null, r.agentType || null); } catch {}
+    },
+    // Project của phiên theo lượt gần nhất đã ghi — hook không biết phiên mở từ canvas nào.
+    projectOfSession(session) {
+      return db.prepare('SELECT project FROM turns WHERE session = ? AND project IS NOT NULL ORDER BY ts DESC LIMIT 1').get(session)?.project || null;
+    },
     record(r) {
       try {
         insert.run(Date.now(), r.session || null, r.project || null, r.router || null, r.task || null, r.agentType || null, r.model || null, r.provider || 'anthropic',
@@ -306,9 +340,17 @@ function openDb(dir) {
       const total = db.prepare(`SELECT COUNT(*) AS n, SUM(input) AS input, SUM(output) AS output, SUM(cache_read) AS cacheRead,
           SUM(cache_write) AS cacheWrite, SUM(cost) AS cost, MIN(ts) AS first FROM turns WHERE ${where}`).get(...args);
       const projects = db.prepare('SELECT project, COUNT(*) AS n FROM turns WHERE ts >= ? GROUP BY project ORDER BY n DESC').all(since);
-      return { flows: flows.map((x) => ({ ...x })), total: { ...total }, projects: projects.map((x) => ({ ...x })) };
+      const subagents = db.prepare(`SELECT agent_type, COUNT(*) AS n FROM subagents WHERE ${where} GROUP BY agent_type ORDER BY n DESC`).all(...args);
+      return { flows: flows.map((x) => ({ ...x })), total: { ...total }, projects: projects.map((x) => ({ ...x })), subagents: subagents.map((x) => ({ ...x })) };
     },
-    clear() { db.exec('DELETE FROM turns'); },
+    // Dùng của một phiên Claude Code (cả đời phiên) và của mọi phiên từ since — cho khung chat IDE.
+    usage(session, since) {
+      const sum = 'COUNT(*) AS n, SUM(input + output + cache_read + cache_write) AS tokens, SUM(cost) AS cost';
+      const one = session ? db.prepare(`SELECT ${sum} FROM turns WHERE session = ?`).get(session) : null;
+      const all = db.prepare(`SELECT ${sum} FROM turns WHERE ts >= ?`).get(since);
+      return { session: one ? { ...one } : null, today: { ...all } };
+    },
+    clear() { db.exec('DELETE FROM turns; DELETE FROM subagents'); },
   };
 }
 
@@ -361,7 +403,10 @@ function createHub({ app, handle, log = () => {}, projects = () => [] }) {
   const claudeFile = path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), 'settings.json');
   const backupFile = `${claudeFile}.git-menorah-backup`;
   let server = null, port = 0, proxyError = null;
+  let limits = null;                // hạn mức gói Claude (header anthropic-ratelimit-unified-*) của lượt gần nhất
   const verdicts = new Map();       // khóa → { task, outcome }
+  const caught = new Map();         // agent_id → { agentType, project } — subagent bắt qua hook SubagentStart
+  const hookFile = path.join(dir, 'hooks', 'subagent-start.sh');
   const inflight = new Map();
 
   // Gốc thật mà proxy chuyển tiếp tới. Không bao giờ là chính proxy (tránh vòng lặp).
@@ -457,6 +502,19 @@ function createHub({ app, handle, log = () => {}, projects = () => [] }) {
   }
 
   // ─── Proxy ─────────────────────────────────────────────────────────────
+  // Gói Pro/Max (đăng nhập claude.ai) trả hạn mức 5 giờ / 7 ngày theo từng lượt. Khóa API / gateway thì không có.
+  function captureLimits(headers) {
+    const p = 'anthropic-ratelimit-unified-';
+    const g = (k) => String(headers[p + k] ?? '');
+    if (!g('status') && !g('5h-utilization') && !g('7d-utilization')) return;
+    const win = (w) => {
+      const u = parseFloat(g(`${w}-utilization`));
+      return Number.isFinite(u) ? { util: u > 1.5 ? u / 100 : u, reset: +g(`${w}-reset`) || 0, status: g(`${w}-status`) } : null;
+    };
+    limits = { at: Date.now(), status: g('status'), reset: +g('reset') || 0, claim: g('representative-claim'),
+      h5: win('5h'), d7: win('7d'), overage: g('overage-status') };
+  }
+
   function forward(req, res, { pathAndQuery, body, onDone: done, retry }) {
     let finished = false;
     const onDone = (...a) => { if (!finished) { finished = true; done?.(...a); } };
@@ -472,6 +530,7 @@ function createHub({ app, handle, log = () => {}, projects = () => [] }) {
         ur.resume();
         return retry();
       }
+      captureLimits(ur.headers);
       res.writeHead(ur.statusCode, ur.headers);
       const tap = usageTap(String(ur.headers['content-type'] || ''));
       ur.on('data', (c) => { tap.push(c); res.write(c); });
@@ -489,20 +548,60 @@ function createHub({ app, handle, log = () => {}, projects = () => [] }) {
     else req.pipe(up);
   }
 
+  // Lượt của subagent mà hook SubagentStart đã bắt nhưng không mang x-claude-code-agent-type: bù từ hook.
+  function withCaught(headers) {
+    const c = caught.get(headerOf(headers, 'x-claude-code-agent-id'));
+    return c && !headerOf(headers, 'x-claude-code-agent-type') ? { ...headers, 'x-claude-code-agent-type': c.agentType } : headers;
+  }
+
+  // ─── Hook SubagentStart ────────────────────────────────────────────────
+  // Input của Claude Code: { session_id, cwd, hook_event_name, agent_id, agent_type }. Trả lời là stdout của hook.
+  function subagentContext(agentType, router) {
+    if (!router || agentType.toLowerCase() !== 'general-purpose') return null;
+    return `Git Menorah Inference Router (${router.name}) runs this subagent: a judge reads the task you were given and picks the Claude model for that kind of task. Stay on that one task. If the work turns into a different kind of task, finish what you have and report back, so the parent can start a new subagent for it.`;
+  }
+  function projectOfHook(ev) {
+    const fromSession = typeof ev.session_id === 'string' && db?.projectOfSession(ev.session_id);
+    if (fromSession) return fromSession;
+    const cwd = typeof ev.cwd === 'string' ? path.resolve(ev.cwd) : '';
+    const hit = projectList().filter((p) => p.cwd && (cwd === path.resolve(p.cwd) || cwd.startsWith(path.resolve(p.cwd) + path.sep)))
+      .sort((a, b) => b.cwd.length - a.cwd.length)[0];
+    return hit?.id || OUTSIDE;
+  }
+  function onSubagentStart(raw, res) {
+    let ev;
+    try { ev = asRecord(JSON.parse(raw.toString('utf8'))); } catch { res.writeHead(400).end(); return; }
+    const agentType = String(ev.agent_type ?? ev.subagent_type ?? '').trim().replace(/[^\w.:-]/g, '').slice(0, 64);
+    const agentId = String(ev.agent_id || '').slice(0, 64);
+    if (agentId === HOOK_PROBE) { res.writeHead(200, { 'content-type': 'application/json' }).end('{"probe":"ok"}'); return; }
+    const project = projectOfHook(ev);
+    if (agentId && agentType) {
+      caught.set(agentId, { agentType, project });
+      if (caught.size > CAUGHT_MAX) caught.delete(caught.keys().next().value);
+    }
+    db?.recordSubagent({ session: typeof ev.session_id === 'string' ? ev.session_id.slice(0, 64) : '', project, agentId, agentType });
+    const context = subagentContext(agentType, routerOf(project));
+    if (!context) { res.writeHead(204).end(); return; }
+    res.writeHead(200, { 'content-type': 'application/json' })
+      .end(JSON.stringify({ hookSpecificOutput: { hookEventName: 'SubagentStart', additionalContext: context } }));
+  }
+
   async function onMessages(req, res, pathAndQuery, raw, project, router) {
     const started = Date.now();
     let body;
     try { body = JSON.parse(raw.toString('utf8')); } catch { body = null; }
     if (!body || typeof body !== 'object') return forward(req, res, { pathAndQuery, body: raw });
 
-    const route = classify(req.headers, body);
+    const route = classify(withCaught(req.headers), body);
     // Bật "chấm lượt kiểm tra an toàn": chấm như một subagent; lượt có safeguards của Anthropic vẫn để Claude.
-    const safety = route.task === 'safety' && !route.safeguards && store.cfg.router.safety;
+    const safety = !!router && route.task === 'safety' && !route.safeguards && store.cfg.router.safety;
     if (safety) Object.assign(route, { router: 'active', agentType: SAFETY_AGENT });
+    // Project chưa gán router: đi thẳng, không chấm, vẫn ghi để báo cáo thấy lượt.
+    if (!router) Object.assign(route, { router: DIRECT, task: route.task || 'subagent' });
     if (route.router === 'active') route.router = router.id;
     const row = { project, router: route.router, task: route.task, agentType: route.agentType, session: headerOf(req.headers, 'x-claude-code-session-id') };
     let send = raw, retry = null;
-    if (route.agentType) {
+    if (router && route.agentType) {
       const prompt = safety ? lastUserPrompt(body) : taskPrompt(body);
       const v = prompt ? await verdictFor(router, route.agentType, prompt, req.headers, project) : { task: null, outcome: 'no_match' };
       row.task = v.task || 'unmatched';
@@ -534,12 +633,20 @@ function createHub({ app, handle, log = () => {}, projects = () => [] }) {
   function onRequest(req, res) {
     const prefix = `/t/${token}`;
     if (!req.url.startsWith(`${prefix}/`)) { res.writeHead(403).end(); return; }
+    if (req.url === `${prefix}/hook/subagent-start`) {
+      if (req.method !== 'POST') { res.writeHead(405).end(); return; }
+      const chunks = [];
+      let size = 0;
+      req.on('data', (c) => { size += c.length; if (size > 1 << 20) { req.destroy(); return; } chunks.push(c); });
+      req.on('end', () => onSubagentStart(Buffer.concat(chunks), res));
+      return;
+    }
     // /p/<project>/… = phiên mở từ canvas; /g/… = Claude Code ngoài app (settings.json).
     const m = /^\/(?:p\/([\w-]{1,64})|(g))(\/.*)$/.exec(req.url.slice(prefix.length));
     const project = m ? m[1] || OUTSIDE : null;
     const pathAndQuery = m ? m[3] : req.url.slice(prefix.length);
     const router = routerOf(project);
-    if (!router || req.method !== 'POST' || !/^\/v1\/messages(\?|$)/.test(pathAndQuery)) return forward(req, res, { pathAndQuery });
+    if (req.method !== 'POST' || !/^\/v1\/messages(\?|$)/.test(pathAndQuery)) return forward(req, res, { pathAndQuery });
     const chunks = [];
     let size = 0;
     req.on('data', (c) => { size += c.length; if (size > MAX_BODY) { req.destroy(); return; } chunks.push(c); });
@@ -563,19 +670,20 @@ function createHub({ app, handle, log = () => {}, projects = () => [] }) {
     if (server) return;
     const want = store.cfg.proxy.port | 0;
     let r = await listen(want);
-    if (r.error && want && !store.cfg.install) r = await listen(0);
+    if (r.error && want && !store.cfg.install) r = await listen(0);   // hook đọc cổng từ script, viết lại sau khi nghe
     if (server) { r.server?.close(); return; }   // hai lần gọi chồng nhau
     if (r.error) { proxyError = r.error.code === 'EADDRINUSE' ? `port ${want} is in use by another program` : r.error.message; return; }
     server = r.server;
     port = server.address().port;
     proxyError = null;
     if (store.cfg.proxy.port !== port) { store.cfg.proxy.port = port; store.save(); }
+    if (store.cfg.hook) writeHookScript();
   }
   // Mỗi project một tệp settings: đường proxy mang id project để lượt biết đi router nào.
-  // Đã cài settings.json thì project không gán router cũng nhận tệp (đi thẳng qua proxy, không ghi) —
-  // nếu không, phiên đó sẽ ăn theo router của Claude Code ngoài app.
+  // Project không gán router cũng nhận tệp: đi thẳng qua proxy và vẫn được ghi (router 'direct') —
+  // không có tệp thì phiên ăn theo settings.json (router của Claude Code ngoài app) hoặc không hiện trong báo cáo.
   function settingsFor(project) {
-    if (!server || !/^[\w-]{1,64}$/.test(project || '') || project === OUTSIDE || (!routerOf(project) && !store.cfg.install)) return null;
+    if (!server || !/^[\w-]{1,64}$/.test(project || '') || project === OUTSIDE) return null;
     const file = path.join(dir, `claude-settings-${project}.json`);
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(file, JSON.stringify({ env: { ANTHROPIC_BASE_URL: `http://127.0.0.1:${port}/t/${token}/p/${project}` } }, null, 1), { mode: 0o600 });
@@ -664,6 +772,97 @@ function createHub({ app, handle, log = () => {}, projects = () => [] }) {
     };
   }
 
+  // ─── Hook SubagentStart trong ~/.claude/settings.json ───────────────────
+  // Script gọi proxy bằng curl; app không chạy thì im lặng thoát 0 — hook không được làm hỏng phiên Claude Code.
+  // Cổng và token nằm trong script: mỗi lần proxy nghe lại thì ghi lại.
+  function writeHookScript() {
+    const url = `http://127.0.0.1:${port}/t/${token}/hook/subagent-start`;
+    const text = `#!/bin/sh
+# Git Menorah — hook SubagentStart (Explore, general-purpose): báo subagent mới về AI Hub.
+# Cài và gỡ trong Git Menorah → AI Hub → Where routers apply. Ghi lại mỗi khi cổng proxy đổi.
+curl -sf -m 3 -X POST -H 'content-type: application/json' --data-binary @- '${url}' 2>/dev/null || true
+`;
+    fs.mkdirSync(path.dirname(hookFile), { recursive: true });
+    let cur = null;
+    try { cur = fs.readFileSync(hookFile, 'utf8'); } catch {}
+    if (cur !== text) fs.writeFileSync(hookFile, text, { mode: 0o700 });
+  }
+  // Nháy đơn như hook nodeterm: đường userData có dấu cách ("Application Support").
+  const hookCommand = () => `sh '${hookFile.replace(/'/g, "'\\''")}'`;
+  const isOurHook = (hook) => typeof asRecord(hook).command === 'string' && HOOK_SCRIPT_RE.test(hook.command);
+  // Mảng hooks.SubagentStart của settings.json; create = tạo khi chưa có. Kiểu lạ thì không dám sửa.
+  function subagentGroups(json, create) {
+    if (json.hooks === undefined) { if (!create) return []; json.hooks = {}; }
+    if (!json.hooks || typeof json.hooks !== 'object' || Array.isArray(json.hooks)) throw new Error('"hooks" in settings.json is not an object — not editing it automatically.');
+    if (json.hooks.SubagentStart === undefined) { if (!create) return []; json.hooks.SubagentStart = []; }
+    if (!Array.isArray(json.hooks.SubagentStart)) throw new Error('"hooks.SubagentStart" in settings.json is not an array — not editing it automatically.');
+    return json.hooks.SubagentStart;
+  }
+  // Bỏ hook của Git Menorah khỏi mọi nhóm; nhóm chỉ còn trống thì bỏ luôn. Trả số hook đã bỏ.
+  function dropOurHooks(json) {
+    let removed = 0;
+    const groups = subagentGroups(json, false).filter((g) => {
+      if (!Array.isArray(asRecord(g).hooks)) return true;
+      const keep = g.hooks.filter((x) => !isOurHook(x));
+      removed += g.hooks.length - keep.length;
+      g.hooks = keep;
+      return keep.length > 0;
+    });
+    if (!removed) return 0;
+    if (groups.length) json.hooks.SubagentStart = groups;
+    else delete json.hooks.SubagentStart;
+    if (!Object.keys(json.hooks).length) delete json.hooks;
+    return removed;
+  }
+  // Chạy đúng script sẽ gắn, với input giống Claude Code: proxy phải trả lời lượt thăm dò.
+  function probeHook() {
+    if (process.platform === 'win32') return Promise.resolve();   // Claude Code chạy hook bằng Git Bash, app không có sẵn sh
+    return new Promise((resolve, reject) => {
+      const child = execFile('sh', [hookFile], { timeout: 8000 }, (err, stdout) => {
+        if (err) return reject(new Error(`The hook script did not run: ${err.message}`));
+        try { if (JSON.parse(stdout).probe === 'ok') return resolve(); } catch {}
+        reject(new Error('The hook script ran but did not reach Git Menorah (is curl installed?)'));
+      });
+      child.stdin.end(JSON.stringify({ hook_event_name: 'SubagentStart', agent_type: 'Explore', agent_id: HOOK_PROBE }));
+    });
+  }
+  async function installHook() {
+    await startProxy();
+    if (!server) throw new Error(`The proxy is not running: ${proxyError}`);
+    writeHookScript();
+    await probeHook();
+    const { json } = readClaudeFile();
+    dropOurHooks(json);
+    const groups = subagentGroups(json, true);
+    for (const matcher of HOOK_MATCHERS) groups.push({ matcher, hooks: [{ type: 'command', command: hookCommand(), timeout: HOOK_TIMEOUT_SECONDS }] });
+    writeAtomic(claudeFile, `${JSON.stringify(json, null, 2)}\n`);
+    store.cfg.hook = { at: Date.now() };
+    store.save();
+  }
+  function removeHook() {
+    const { text, json } = readClaudeFile();
+    if (text != null && dropOurHooks(json)) writeAtomic(claudeFile, `${JSON.stringify(json, null, 2)}\n`);
+    fs.rmSync(hookFile, { force: true });
+    store.cfg.hook = null;
+    store.save();
+  }
+  function hookConfig() {
+    const inst = store.cfg.hook;
+    let matchers = [], others = 0, error = null;
+    try {
+      for (const g of subagentGroups(readClaudeFile().json, false)) {
+        const hooks = Array.isArray(asRecord(g).hooks) ? g.hooks : [];
+        if (hooks.some(isOurHook)) matchers.push(typeof g.matcher === 'string' ? g.matcher : '');
+        others += hooks.filter((x) => !isOurHook(x)).length;
+      }
+    } catch (e) { error = e.message; }
+    if (inst && !server) error = `The proxy is not running (${proxyError || 'not started'}) — subagents are not caught.`;
+    return {
+      file: claudeFile, script: hookFile, installed: !!inst, at: inst?.at || 0, wanted: HOOK_MATCHERS, matchers,
+      missing: inst ? HOOK_MATCHERS.filter((m) => !matchers.includes(m)) : [], others, error,
+    };
+  }
+
   const projectList = () => { try { return projects().map((p) => ({ id: p.id, name: p.name, cwd: p.cwd })); } catch { return []; } };
 
   // ─── Nhà cung cấp đã thêm ──────────────────────────────────────────────
@@ -701,6 +900,7 @@ function createHub({ app, handle, log = () => {}, projects = () => [] }) {
       claudeModels: CLAUDE_MODELS,
       router: { enabled: !!r.enabled, safety: !!r.safety, upstream: r.upstream, judge: r.judge, tasks: r.tasks, projects: r.projects, global: r.global },
       claudeConfig: claudeConfig(),
+      hookConfig: hookConfig(),
       projects: projectList(),
       upstream: upstream(),
       proxy: { running: !!server, port, error: proxyError },
@@ -798,6 +998,13 @@ function createHub({ app, handle, log = () => {}, projects = () => [] }) {
   });
   handle('ws:hub-claude-install', async () => { await installClaude(); return state(); });
   handle('ws:hub-claude-restore', () => { const mode = restoreClaude(); return { mode, state: state() }; });
+  handle('ws:hub-hook-install', async () => { await installHook(); return state(); });
+  handle('ws:hub-hook-remove', () => { removeHook(); return state(); });
+  handle('ws:hub-usage', (e, session) => {
+    const midnight = new Date(); midnight.setHours(0, 0, 0, 0);
+    const u = db ? db.usage(typeof session === 'string' ? session.slice(0, 64) : '', +midnight) : { session: null, today: null };
+    return { proxy: !!server, limits, ...u };
+  });
   handle('ws:hub-report-clear', () => { db?.clear(); return true; });
   // Chấm thử: hỏi model chấm đúng câu sẽ hỏi cho subagent, không ghi vào phiên nào.
   handle('ws:hub-judge-test', async (e, prompt, routerId) => {
@@ -808,7 +1015,7 @@ function createHub({ app, handle, log = () => {}, projects = () => [] }) {
   });
 
   // Đã cài settings.json thì proxy luôn chạy (kể cả khi tắt router: lượt đi thẳng), không thì Claude Code ngoài app mất kết nối.
-  if (store.cfg.router.enabled || store.cfg.install) startProxy();
+  if (store.cfg.router.enabled || store.cfg.install || store.cfg.hook) startProxy();
 
   return {
     // Tệp settings cho phiên Claude Code mới / --resume của project. null = chạy thẳng như cũ.

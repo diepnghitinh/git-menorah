@@ -10,6 +10,9 @@
 // ⌘/Ctrl + cuộn (hoặc chụm hai ngón) → zoom quanh con trỏ.
 'use strict';
 
+const RESUME_COMPACT_MIN = 20000;   // context nhỏ hơn chừng này token thì gửi lại cả context vẫn rẻ — khỏi /compact
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
 const AGENTS = {
   claude: { label: 'Claude Code', mark: 'C' },
   codex: { label: 'Codex', mark: 'X' },
@@ -43,6 +46,7 @@ class Canvas {
     this.svg = $('#links');
     this.info = opts.info;
     this.onChange = opts.onChange;
+    this.resuming = new Set();      // node đang được mở lại (resumeSend)
     this.onStatus = opts.onStatus || (() => {});
     this.onContextMenu = opts.onContextMenu || (() => {});
     this.project = null;
@@ -294,7 +298,7 @@ class Canvas {
 
     document.addEventListener('keydown', (e) => {
       if (document.activeElement && /^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName)) return;
-      if ((e.key === 'Delete' || e.key === 'Backspace') && this.selLink) { this.removeLink(this.selLink); e.preventDefault(); }
+      if ((e.key === 'Delete' || e.key === 'Backspace') && this.selLink && this.stage.offsetParent) { this.removeLink(this.selLink); e.preventDefault(); }
       else if ((e.key === 'Delete' || e.key === 'Backspace') && this.node(this.active)?.kind === 'image' && this.stage.offsetParent) { this.remove(this.active); e.preventDefault(); }
       if (e.key === 'Escape') { this.selectLink(null); }
     });
@@ -543,6 +547,67 @@ class Canvas {
   }
 
   resumeAll() { for (const v of this.views.values()) if (v.stopped && v.n.kind === 'terminal') v.start(); }
+
+  // Mở lại một phiên agent đã dừng rồi gửi tiếp `prompt` (null = chỉ mở lại). Đợi TUI dựng xong;
+  // Claude có prompt cache đã nguội (quá TTL kể từ request cuối) và context đủ lớn thì /compact
+  // trước: prompt kế tiếp khỏi ghi lại cả context cũ, các lượt sau đi từ bản tóm tắt.
+  // `n` = { id, agent, cwd, sessionId }; node không ở canvas đang mở (khung Chat của IDE) thì mở
+  // PTY thẳng, canvas của nó gắn vào sau.
+  async resumeSend(n, prompt, chat) {
+    if (this.resuming.has(n.id)) return toast('Still resuming this session — one moment.');
+    this.resuming.add(n.id);
+    const paste = (t) => { window.menorah.ptyWrite(n.id, `\x1b[200~${t}\x1b[201~`); return sleep(80).then(() => window.menorah.ptyWrite(n.id, '\r')); };
+    try {
+      chat?.setNote('Resuming…');
+      const v = this.views.get(n.id);
+      if (v) {
+        if (v.stopped) await v.start();
+        if (v.stopped) throw new Error('start failed');
+      } else await window.menorah.ptyStart({ nodeId: n.id, agent: n.agent, cwd: n.cwd, sessionId: n.sessionId || '', cols: 120, rows: 36 });
+      await this.settle(n.id);
+      const c = n.agent === 'claude' ? (await window.menorah.cache()).find((x) => x.nodeId === n.id) : null;
+      if (c?.cacheAt && !c.compacted && Date.now() > c.cacheAt + (c.cacheTtl || 3600) * 1e3 && (c.ctxUsed || 0) >= RESUME_COMPACT_MIN) {
+        chat?.setNote('Compacting…');
+        toast(prompt ? 'Prompt cache is cold — compacting first, then sending your message.' : 'Prompt cache is cold — compacting the conversation.');
+        await paste('/compact');
+        await this.compacted(n.id);
+      }
+      if (prompt) await paste(prompt);
+      chat?.setState('idle');
+    } catch {
+      toast('Could not resume the session.');
+      if (prompt && chat && !chat.input.value) { chat.input.value = prompt; chat.autosize(); }
+    } finally {
+      this.resuming.delete(n.id);
+      chat?.setNote('');
+    }
+  }
+
+  // Đợi TUI vừa mở im (không ra output 1,5 giây = idle) — sớm hơn thì phím gõ có thể lạc.
+  async settle(id) {
+    const t0 = Date.now();
+    await sleep(1000);
+    while (Date.now() - t0 < 20e3) {
+      const s = (await window.menorah.ptyState([id]))[id];
+      if (s === 'stopped') throw new Error('stopped');
+      if (s === 'idle' && Date.now() - t0 > 2500) return;
+      await sleep(400);
+    }
+  }
+
+  // /compact xong = transcript có mốc compact sau phản hồi cuối và phiên đã im. Compact hỏng
+  // (không có mốc) thì thôi đợi khi phiên đã chạy rồi im 5 giây; tối đa 5 phút.
+  async compacted(id) {
+    const t0 = Date.now();
+    let ran = 0;
+    while (Date.now() - t0 < 300e3) {
+      await sleep(1000);
+      const c = (await window.menorah.cache()).find((x) => x.nodeId === id);
+      if (!c) throw new Error('stopped');
+      if (c.status === 'running') ran = Date.now();
+      else if (c.compacted || ran && Date.now() - ran > 5000) return;
+    }
+  }
 }
 
 // ─── Khung chung của một node ───────────────────────────────────────────────
@@ -644,7 +709,7 @@ class TerminalView extends NodeView {
     this.term.onData((d) => { if (!this.stopped) window.menorah.ptyWrite(n.id, d); });
     this.term.onResize(({ cols, rows }) => { if (!this.stopped) window.menorah.ptyResize(n.id, cols, rows); });
     // Gõ tiếng Việt (Telex / VNI) ngay trong xterm; nhường bộ gõ của máy nếu có.
-    VnKey.attach(this.term, { el: this.host, config: vnInput.config, onToggle: () => vnInput.toggle(), onForeign: () => vnInput.foreignSeen() });
+    VnKey.attach(this.term, { el: this.host, config: () => vnInput.config('term'), onToggle: () => vnInput.toggle(), onForeign: () => vnInput.foreignSeen() });
     this.offVn = vnInput.listen(() => this.syncVn());
     this.syncVn();
 
@@ -705,14 +770,17 @@ class TerminalView extends NodeView {
     this.overlay.hidden = true;
     this.fit();
     let r;
+    const { cols, rows } = this.term;
     try {
-      r = await window.menorah.ptyStart({ nodeId: this.n.id, agent: this.n.agent, cwd: this.n.cwd, sessionId: this.n.sessionId, cols: this.term.cols, rows: this.term.rows });
+      r = await window.menorah.ptyStart({ nodeId: this.n.id, agent: this.n.agent, cwd: this.n.cwd, sessionId: this.n.sessionId, cols, rows });
     } catch (e) {
       this.overlay.hidden = false;
       this.overlay.replaceChildren(h('div', h('p', `Could not open the terminal: ${e.message}`)));
       return;
     }
     this.stopped = false;
+    // Khung đổi cỡ trong lúc chờ — onResize lúc đó bị bỏ qua.
+    if (this.term.cols !== cols || this.term.rows !== rows) window.menorah.ptyResize(this.n.id, this.term.cols, this.term.rows);
     this.term.reset();
     if (r.buffer) this.term.write(r.buffer);
     if (r.sessionId && r.sessionId !== this.n.sessionId) { this.n.sessionId = r.sessionId; this.c.saveSoon(); }
@@ -727,7 +795,7 @@ class TerminalView extends NodeView {
     const resumable = this.n.agent === 'claude' || (this.n.agent === 'codex' && this.n.sessionId);
     this.overlay.replaceChildren(h('div',
       h('p', code == null ? (resumable ? 'Session stopped. Resume to continue the same conversation.' : 'Terminal stopped.') : `Session ended (exit code ${code}).`),
-      h('button.primary', { onclick: () => this.start() }, icon('play'), resumable ? 'Resume session' : 'Restart')));
+      h('button.primary', { onclick: () => (this.n.agent === 'shell' ? this.start() : this.c.resumeSend(this.n, null, this.chat)) }, icon('play'), resumable ? 'Resume session' : 'Restart')));
     this.overlay.hidden = false;
     this.c.refreshResume();
   }
@@ -781,7 +849,8 @@ class TerminalView extends NodeView {
     this.modeBtns.forEach((b, i) => b.classList.toggle('on', (i === 0) === (mode === 'cli')));
     if (mode === 'chat') {
       if (!this.chat) {
-        this.chat = new ChatView(this.n, { write: (d) => { if (this.stopped) toast('The session is stopped — click Resume session first.'); else window.menorah.ptyWrite(this.n.id, d); }, onFocus: () => this.c.activate(this.n.id), isWin: this.c.info.platform === 'win32' });
+        this.chat = new ChatView(this.n, { write: (d) => { if (this.stopped) toast('The session is stopped — send a message or click Resume session.'); else window.menorah.ptyWrite(this.n.id, d); },
+          resume: (p) => this.c.resumeSend(this.n, p, this.chat), onFocus: () => this.c.activate(this.n.id), isWin: this.c.info.platform === 'win32' });
         this.body.append(this.chat.el);
       }
       this.chat.el.hidden = false;
@@ -796,10 +865,10 @@ class TerminalView extends NodeView {
 
   focus() { if (this.n.view === 'chat' && this.chat) this.chat.input.focus(); else this.term.focus(); }
 
-  // Nút VI / EN trên header: ẩn khi tắt gõ tiếng Việt hoặc đang nhường bộ gõ của máy.
+  // Nút VI / EN trên header: ẩn khi tắt plugin gõ tiếng Việt hoặc đang nhường bộ gõ của máy.
   syncVn() {
     const c = vnInput.cfg, keys = this.c.info.platform === 'darwin' ? '⌃⇧' : 'Ctrl+Shift';
-    this.vnEl.hidden = c.method === 'off' || vnInput.yielded();
+    this.vnEl.hidden = !c.enabled || vnInput.yielded('term');
     this.vnEl.textContent = c.on ? 'VI' : 'EN';
     this.vnEl.classList.toggle('on', c.on);
     this.vnEl.title = `${c.on ? 'Vietnamese' : 'English'} typing (${c.method === 'vni' ? 'VNI' : 'Telex'}) — click or press ${keys} to switch`;

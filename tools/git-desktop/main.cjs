@@ -35,7 +35,7 @@ const GUARD = path.join(__dirname, 'workspace', 'server-guard.mjs');
 // Cổng cố định để localStorage (giao diện, cỡ khung, repo chọn gần nhất) giữ được giữa
 // các lần mở — origin đổi theo cổng. Cổng đầu bận thì lùi sang cổng sau.
 const PORTS = [4991, 4992, 4993, 4994, 4995];
-const ALLOWED = [/^\/$/, /^\/git\.html$/, /^\/api\/git\//, /^\/git-view\//, /^\/vendor\/(xterm|addon-fit|addon-unicode11|addon-web-links|vnkey)\//];
+const ALLOWED = [/^\/$/, /^\/git\.html$/, /^\/api\/git\//, /^\/git-view\//, /^\/vendor\/(xterm|addon-fit|addon-unicode11|addon-web-links|vnkey|monaco)\//];
 
 let server = null;   // { child, port, origin }
 let quitting = false;

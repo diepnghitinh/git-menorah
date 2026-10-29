@@ -47,6 +47,8 @@ const ICON = {
   info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>',
   shield: '<path d="M12 3 5 6v5c0 4.5 3 8.3 7 9.5 4-1.2 7-5 7-9.5V6l-7-3Z"/><path d="m9 12 2 2 4-4"/>',
   external: '<path d="M14 4h6v6M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>',
+  copy: '<rect x="8" y="8" width="13" height="13" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/>',
+  keyboard: '<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 13h.01M18 13h.01M10 13h4M7 16h10"/>',
 };
 const icon = (name, cls = '') => { const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('class', `i ${cls}`); s.innerHTML = ICON[name]; return s; };
 
@@ -56,7 +58,12 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 // Thoát HTML trước rồi mới thay — không có chỗ nào chèn HTML thô từ transcript.
 function md(src) {
   const blocks = [];
-  let s = esc(src).replace(/```[^\n]*\n([\s\S]*?)(?:```|$)/g, (_, code) => { blocks.push(`<pre><code>${code.replace(/\n$/, '')}</code></pre>`); return `\u0000${blocks.length - 1}\u0000`; });
+  // Khối code kèm thanh tên ngôn ngữ + nút Copy (khung Chat bắt click .code-copy).
+  let s = esc(src).replace(/```([^\n]*)\n([\s\S]*?)(?:```|$)/g, (_, lang, code) => {
+    lang = (lang.trim().match(/^[\w+#.-]{1,20}/) || [''])[0];
+    blocks.push(`<div class="code"><div class="code-head"><span>${lang || 'code'}</span><button type="button" class="code-copy">Copy</button></div><pre><code>${code.replace(/\n$/, '')}</code></pre></div>`);
+    return `\u0000${blocks.length - 1}\u0000`;
+  });
   const inline = (t) => t
     .replace(/`([^`\n]+)`/g, '<code>$1</code>')
     .replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>')
@@ -70,9 +77,9 @@ function md(src) {
     if (hd) { out.push(`<h${hd[1].length + 1}>${inline(hd[2])}</h${hd[1].length + 1}>`); continue; }
     if (/^\s*\|.*\|\s*$/.test(l) && /^\s*\|[\s:|-]+\|\s*$/.test(lines[i + 1] || '')) {
       const row = (r, tg) => `<tr>${r.trim().replace(/^\||\|$/g, '').split('|').map((c) => `<${tg}>${inline(c.trim())}</${tg}>`).join('')}</tr>`;
-      let t = `<table>${row(l, 'th')}`; i += 2;
+      let t = `<div class="tbl"><table><thead>${row(l, 'th')}</thead><tbody>`; i += 2;
       while (i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i])) t += row(lines[i++], 'td');
-      i--; out.push(`${t}</table>`); continue;
+      i--; out.push(`${t}</tbody></table></div>`); continue;
     }
     if (/^\s*([-*]|\d+\.)\s+/.test(l)) {
       const ordered = /^\s*\d+\./.test(l);
@@ -86,6 +93,12 @@ function md(src) {
     out.push(`<p>${p}</p>`);
   }
   return out.join('').replace(/\u0000(\d+)\u0000/g, (_, n) => blocks[n]);
+}
+
+// Chép vào clipboard rồi báo bằng toast — what: tên thứ vừa chép ("Path", "Command"…).
+async function copyText(text, what = 'Text') {
+  try { await navigator.clipboard.writeText(String(text)); toast(`${what} copied`, 1600); }
+  catch { toast('Could not copy to the clipboard.'); }
 }
 
 let toastT = null;
@@ -154,34 +167,52 @@ const errText = (e) => String(e?.message || e).replace(/^Error invoking remote m
 
 const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
 
-// ─── Gõ tiếng Việt trong terminal (app/vnkey.js) ────────────────────────────
-// Một cài đặt cho mọi terminal: node trên canvas và khay Terminal của tab Git (app chuyển qua
-// postMessage). method 'off' | 'telex' | 'vni'; on = công tắc VI/EN (⌃⇧); auto = nhường bộ gõ
-// của máy; modern = đặt dấu kiểu mới (hoà, thuỷ). Mặc định bật Telex khi máy dùng tiếng Việt.
+// ─── Plugin gõ tiếng Việt (app/vnkey.js) ────────────────────────────────────
+// Một cài đặt cho cả app: terminal, ô nhập, note, và trang Git (app chuyển qua postMessage).
+// enabled = plugin bật (rail › Plugins); method 'telex' | 'vni'; on = công tắc VI/EN (⌃⇧);
+// auto = ô nhập nhường bộ gõ của máy; modern = đặt dấu kiểu mới (hoà, thuỷ). Mặc định bật khi máy
+// dùng tiếng Việt. Bản 1.0.8 tắt bằng method 'off' — đọc lại thành enabled.
+// Terminal trên macOS luôn ưu tiên bộ gõ tích hợp: có GoTiengViet, OpenKey… chạy thì lúc terminal
+// focus app bật Secure Keyboard Entry để bộ gõ kia không thấy phím (gõ hai lần là hỏng dấu).
+// Windows / Linux không chặn được nên terminal cũng nhường như ô nhập.
 const vnInput = {
-  cfg: {
-    method: (navigator.languages || []).some((l) => /^vi\b/i.test(l)) ? 'telex' : 'off', on: true, auto: true, modern: false,
-    ...(() => { try { return JSON.parse(localStorage.getItem('menorah.vnkey')) || {}; } catch { return {}; } })(),
-  },
+  cfg: (() => {
+    let s = {};
+    try { s = JSON.parse(localStorage.getItem('menorah.vnkey')) || {}; } catch {}
+    const vi = (navigator.languages || []).some((l) => /^vi\b/i.test(l));
+    return { on: true, auto: true, modern: false, ...s,
+      enabled: s.enabled ?? (s.method ? s.method !== 'off' : vi), method: s.method === 'vni' ? 'vni' : 'telex' };
+  })(),
   system: null,     // bộ gõ của máy đang chạy (UniKey, OpenKey…) — tiến trình chính dò
   foreign: false,   // phím tới đã là chữ Việt: có bộ gõ khác gõ hộ (kể cả bộ gõ dò không ra)
+  mac: /^Mac/.test(navigator.platform),
+  focused: new Set(),   // nơi có terminal đang focus: 'app', 'git'
+  secure: false,
   subs: new Set(),
-  yielded() { return this.cfg.auto && !!(this.system || this.foreign); },
-  // Phương thức dùng thật lúc này cho VnKey.attach.
-  config() { const c = vnInput.cfg; return { method: c.on && !vnInput.yielded() ? c.method : 'off', modern: c.modern }; },
+  // Ô nhập ('field') nhường bộ gõ của máy theo auto; terminal ('term') trên macOS thì không.
+  yielded(where = 'field') { return !(where === 'term' && this.mac) && this.cfg.auto && !!(this.system || this.foreign); },
+  // Phương thức dùng thật lúc này cho VnKey.attach ('term') / attachFields ('field'; ô soạn Chat của agent là 'term').
+  config(where = 'field') { const c = vnInput.cfg; return { method: c.enabled && c.on && !vnInput.yielded(where) ? c.method : 'off', modern: c.modern }; },
   set(patch) { Object.assign(this.cfg, patch); localStorage.setItem('menorah.vnkey', JSON.stringify(this.cfg)); this.emit(); },
   toggle() {
-    if (this.cfg.method === 'off') return;
-    if (this.cfg.auto && this.system) return toast(`${this.system} is typing Vietnamese on this computer — the built-in typing stays off.`);
-    if (this.cfg.auto && this.foreign) { this.foreign = false; return this.set({ on: true }); }
+    if (!this.cfg.enabled) return;
+    if (!this.mac && this.cfg.auto && this.system) return toast(`${this.system} is typing Vietnamese on this computer — the built-in typing stays off.`);
+    if (!this.mac && this.cfg.auto && this.foreign) { this.foreign = false; return this.set({ on: true }); }
     this.set({ on: !this.cfg.on });
   },
-  foreignSeen() { if (this.cfg.auto && !this.foreign) { this.foreign = true; this.emit(); } },
+  foreignSeen() { if (!this.foreign) { this.foreign = true; this.emit(); } },
+  // Terminal ở `src` vừa focus / rời focus.
+  termFocus(src, on) { if (on) this.focused.add(src); else this.focused.delete(src); this.guard(); },
+  // Chặn bộ gõ của máy chỉ khi cần: plugin bật, terminal đang focus, và có bộ gõ khác.
+  guard() {
+    const want = this.mac && this.cfg.enabled && this.focused.size > 0 && !!(this.system || this.foreign);
+    if (want !== this.secure) { this.secure = want; window.menorah.secureInput?.(want); }
+  },
   async probe() {
     let s = null;
     try { s = await window.menorah.vnIme(); } catch {}
     if (s !== this.system) { this.system = s; this.emit(); }
   },
-  emit() { for (const fn of this.subs) fn(); },
+  emit() { this.guard(); for (const fn of this.subs) fn(); },
   listen(fn) { this.subs.add(fn); return () => this.subs.delete(fn); },
 };

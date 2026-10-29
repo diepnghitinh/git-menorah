@@ -158,21 +158,37 @@ func transcriptFile(agent, sessionID string) string {
 // ─── Parse ──────────────────────────────────────────────────────────────────
 
 type message struct {
-	Role   string  `json:"role"` // user | assistant | tool | note
+	Role   string  `json:"role"` // user | assistant | tool | result | thinking | note
 	Text   string  `json:"text"`
 	Name   string  `json:"name,omitempty"`
 	Images int     `json:"images,omitempty"`
 	Error  bool    `json:"error,omitempty"`
 	Ts     float64 `json:"ts"`
+	// Cho khung Chat: ID nối tool ↔ result; Input = input của tool đã cắt gọn; Patch = diff của
+	// Edit / Write; Model + Tokens (cỡ context của request) ở tin cuối mỗi phản hồi.
+	ID     string  `json:"id,omitempty"`
+	Input  any     `json:"input,omitempty"`
+	Patch  []hunk  `json:"patch,omitempty"`
+	Model  string  `json:"model,omitempty"`
+	Tokens float64 `json:"tokens,omitempty"`
+}
+
+type hunk struct {
+	OldStart int      `json:"oldStart"`
+	NewStart int      `json:"newStart"`
+	Lines    []string `json:"lines"`
 }
 
 type contentPart struct {
-	Type    string          `json:"type"`
-	Text    string          `json:"text"`
-	Name    string          `json:"name"`
-	Input   json.RawMessage `json:"input"`
-	IsError bool            `json:"is_error"`
-	Content json.RawMessage `json:"content"`
+	Type      string          `json:"type"`
+	Text      string          `json:"text"`
+	Thinking  string          `json:"thinking"`
+	ID        string          `json:"id"`
+	ToolUseID string          `json:"tool_use_id"`
+	Name      string          `json:"name"`
+	Input     json.RawMessage `json:"input"`
+	IsError   bool            `json:"is_error"`
+	Content   json.RawMessage `json:"content"`
 }
 
 type usage struct {
@@ -202,12 +218,13 @@ func (u *usage) ttl() float64 {
 }
 
 type claudeLine struct {
-	Type             string `json:"type"`
-	Subtype          string `json:"subtype"`
-	IsSidechain      bool   `json:"isSidechain"`
-	IsMeta           bool   `json:"isMeta"`
-	IsCompactSummary bool   `json:"isCompactSummary"`
-	Timestamp        string `json:"timestamp"`
+	Type             string          `json:"type"`
+	Subtype          string          `json:"subtype"`
+	IsSidechain      bool            `json:"isSidechain"`
+	IsMeta           bool            `json:"isMeta"`
+	IsCompactSummary bool            `json:"isCompactSummary"`
+	Timestamp        string          `json:"timestamp"`
+	ToolUseResult    json.RawMessage `json:"toolUseResult"`
 	Message          *struct {
 		Content    json.RawMessage `json:"content"`
 		Model      string          `json:"model"`
@@ -220,8 +237,13 @@ type codexLine struct {
 	Type      string `json:"type"`
 	Timestamp string `json:"timestamp"`
 	Payload   *struct {
-		Type      string            `json:"type"`
-		Message   string            `json:"message"`
+		Type    string          `json:"type"`
+		Message string          `json:"message"`
+		CallID  string          `json:"call_id"`
+		Output  json.RawMessage `json:"output"`
+		Summary []struct {
+			Text string `json:"text"`
+		} `json:"summary"`
 		Images    []json.RawMessage `json:"images"`
 		Name      string            `json:"name"`
 		Arguments json.RawMessage   `json:"arguments"`
@@ -289,6 +311,124 @@ func toolBrief(input json.RawMessage) string {
 	return clip(out, 160)
 }
 
+// Input của tool cho khung Chat: giữ nguyên cấu trúc, cắt chuỗi dài (old_string, content…) và
+// mảng dài để mỗi tin vẫn gọn.
+func toolInput(raw json.RawMessage) any {
+	var v any
+	if isNullish(raw) || json.Unmarshal(raw, &v) != nil {
+		return nil
+	}
+	return clipValue(v, 0)
+}
+
+func clipValue(v any, depth int) any {
+	switch x := v.(type) {
+	case string:
+		return clipMid(x, 3000)
+	case []any:
+		if depth > 4 {
+			return nil
+		}
+		if len(x) > 60 {
+			x = x[:60]
+		}
+		for i := range x {
+			x[i] = clipValue(x[i], depth+1)
+		}
+		return x
+	case map[string]any:
+		if depth > 4 {
+			return nil
+		}
+		for k := range x {
+			x[k] = clipValue(x[k], depth+1)
+		}
+		return x
+	}
+	return v
+}
+
+// Cắt giữa: giữ đầu và đuôi (đuôi output thường có lỗi / kết quả cuối).
+func clipMid(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	head, tail := n*2/3, n/3
+	return string(r[:head]) + fmt.Sprintf("\n… %d characters cut …\n", len(r)-head-tail) + string(r[len(r)-tail:])
+}
+
+// Chữ của tool_result: chuỗi, hoặc mảng [{type:text,text}].
+func resultText(c json.RawMessage) string {
+	if t, ok := rawString(c); ok {
+		return t
+	}
+	var items []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}
+	_ = json.Unmarshal(c, &items)
+	ss := []string{}
+	for _, it := range items {
+		if it.Text != "" {
+			ss = append(ss, it.Text)
+		}
+	}
+	return strings.Join(ss, "\n")
+}
+
+// Kết quả một tool của Claude. toolUseResult (nếu có) cho dạng gọn hơn: Bash → stdout/stderr,
+// Read → số dòng (khỏi gửi cả tệp), Edit / Write → structuredPatch.
+func claudeResult(r contentPart, extra json.RawMessage, ts float64) message {
+	m := message{Role: "result", ID: r.ToolUseID, Error: r.IsError, Ts: ts}
+	text := resultText(r.Content)
+	var x struct {
+		Stdout *string `json:"stdout"`
+		Stderr string  `json:"stderr"`
+		File   *struct {
+			NumLines   int `json:"numLines"`
+			StartLine  int `json:"startLine"`
+			TotalLines int `json:"totalLines"`
+		} `json:"file"`
+		Patch []struct {
+			OldStart int      `json:"oldStart"`
+			NewStart int      `json:"newStart"`
+			Lines    []string `json:"lines"`
+		} `json:"structuredPatch"`
+		Type string `json:"type"`
+	}
+	if !r.IsError && len(extra) > 0 && extra[0] == '{' && json.Unmarshal(extra, &x) == nil {
+		switch {
+		case x.Stdout != nil:
+			text = strings.TrimRight(*x.Stdout, "\n")
+			if x.Stderr != "" {
+				text = strings.TrimSpace(text + "\n" + x.Stderr)
+			}
+		case x.File != nil:
+			text = fmt.Sprintf("%d lines (from line %d of %d)", x.File.NumLines, max(1, x.File.StartLine), x.File.TotalLines)
+		case x.Patch != nil || x.Type == "create":
+			left := 400
+			for _, p := range x.Patch {
+				if left <= 0 {
+					break
+				}
+				ls := p.Lines
+				if len(ls) > left {
+					ls = ls[:left]
+				}
+				for i := range ls {
+					ls[i] = clip(ls[i], 400)
+				}
+				left -= len(ls)
+				m.Patch = append(m.Patch, hunk{OldStart: p.OldStart, NewStart: p.NewStart, Lines: ls})
+			}
+			text = clip(collapseSpace(text), 200)
+		}
+	}
+	m.Text = clipMid(text, 6000)
+	return m
+}
+
 func parseClaudeLine(raw []byte) []message {
 	var j claudeLine
 	if json.Unmarshal(raw, &j) != nil {
@@ -338,22 +478,9 @@ func claudeMessages(j *claudeLine) []message {
 			out = append(out, message{Role: "user", Text: text, Images: images, Ts: ts})
 		}
 		for _, r := range parts {
-			if r.Type != "tool_result" || !r.IsError {
-				continue
+			if r.Type == "tool_result" {
+				out = append(out, claudeResult(r, j.ToolUseResult, ts))
 			}
-			t, ok := rawString(r.Content)
-			if !ok {
-				var items []struct {
-					Text string `json:"text"`
-				}
-				_ = json.Unmarshal(r.Content, &items)
-				ss := make([]string, len(items))
-				for i, it := range items {
-					ss[i] = it.Text
-				}
-				t = strings.Join(ss, " ")
-			}
-			out = append(out, message{Role: "tool", Name: "Error", Text: clip(collapseSpace(t), 200), Error: true, Ts: ts})
 		}
 		return out
 	}
@@ -363,11 +490,20 @@ func claudeMessages(j *claudeLine) []message {
 	}
 	var out []message
 	for _, x := range parts {
+		if x.Type == "thinking" && jsTrim(x.Thinking) != "" {
+			out = append(out, message{Role: "thinking", Text: clipMid(x.Thinking, 4000), Ts: ts})
+		}
 		if x.Type == "text" && jsTrim(x.Text) != "" {
 			out = append(out, message{Role: "assistant", Text: x.Text, Ts: ts})
 		}
 		if x.Type == "tool_use" {
-			out = append(out, message{Role: "tool", Name: x.Name, Text: toolBrief(x.Input), Ts: ts})
+			out = append(out, message{Role: "tool", Name: x.Name, Text: toolBrief(x.Input), ID: x.ID, Input: toolInput(x.Input), Ts: ts})
+		}
+	}
+	if n := len(out); n > 0 {
+		out[n-1].Model = j.Message.Model
+		if u := j.Message.Usage; u != nil {
+			out[n-1].Tokens = u.total()
 		}
 	}
 	return out
@@ -429,9 +565,55 @@ func codexMessages(j *codexLine) []message {
 		if name == "" {
 			name = "shell"
 		}
-		return []message{{Role: "tool", Name: name, Text: brief, Ts: ts}}
+		var in any
+		if input != nil {
+			in = toolInput(input)
+		}
+		return []message{{Role: "tool", Name: name, Text: brief, ID: p.CallID, Input: in, Ts: ts}}
+	}
+	if j.Type == "response_item" && (p.Type == "function_call_output" || p.Type == "custom_tool_call_output") {
+		text, failed := codexOutput(p.Output)
+		return []message{{Role: "result", ID: p.CallID, Text: clipMid(text, 6000), Error: failed, Ts: ts}}
+	}
+	if j.Type == "response_item" && p.Type == "reasoning" {
+		ss := []string{}
+		for _, x := range p.Summary {
+			if t := jsTrim(x.Text); t != "" {
+				ss = append(ss, t)
+			}
+		}
+		if len(ss) > 0 {
+			return []message{{Role: "thinking", Text: clipMid(strings.Join(ss, "\n\n"), 4000), Ts: ts}}
+		}
 	}
 	return nil
+}
+
+var codexExitRe = regexp.MustCompile(`(?m)^Exit code: (\d+)`)
+
+// Output của tool Codex: chuỗi thường ("Exit code: 0\nWall time…\nOutput:\n…") hoặc JSON
+// {"output": "...", "metadata": {"exit_code": n}} nằm trong chuỗi.
+func codexOutput(raw json.RawMessage) (string, bool) {
+	s, ok := rawString(raw)
+	if !ok {
+		s = resultText(raw)
+	}
+	var x struct {
+		Output   *string `json:"output"`
+		Metadata struct {
+			ExitCode int `json:"exit_code"`
+		} `json:"metadata"`
+	}
+	if t := strings.TrimSpace(s); strings.HasPrefix(t, "{") && json.Unmarshal([]byte(t), &x) == nil && x.Output != nil {
+		return strings.TrimRight(*x.Output, "\n"), x.Metadata.ExitCode != 0
+	}
+	if m := codexExitRe.FindStringSubmatch(s); m != nil {
+		if i := strings.Index(s, "\nOutput:\n"); i >= 0 {
+			return strings.TrimRight(s[i+len("\nOutput:\n"):], "\n"), m[1] != "0"
+		}
+		return s, m[1] != "0"
+	}
+	return s, false
 }
 
 func parserFor(agent string) func([]byte) []message {
@@ -516,11 +698,22 @@ func formatMessages(msgs []message, agentName string) string {
 			lines[i] = agentName + ": " + m.Text
 		case "tool":
 			lines[i] = "  [" + m.Name + "] " + m.Text
+		case "result":
+			if m.Error {
+				lines[i] = "  [Error] " + clip(collapseSpace(m.Text), 200)
+			}
+		case "thinking":
 		default:
 			lines[i] = "  (" + m.Text + ")"
 		}
 	}
-	return strings.Join(lines, "\n")
+	keep := lines[:0]
+	for _, l := range lines {
+		if l != "" {
+			keep = append(keep, l)
+		}
+	}
+	return strings.Join(keep, "\n")
 }
 
 // Đọc khúc cuối tệp (tối đa win byte), bỏ dòng đầu nếu bị cắt giữa chừng. Trả các dòng đủ và

@@ -5,9 +5,9 @@
 
 const HUB_TASK_LABEL = {
   main: 'Main loop', small: 'Side request', explore: 'Explore (read many files)', safety: 'Safety check',
-  judge: 'Router judging', unmatched: 'No task matched', unclassified: 'Unclassified',
+  judge: 'Router judging', unmatched: 'No task matched', unclassified: 'Unclassified', subagent: 'Subagent',
 };
-const HUB_ROUTER_LABEL = { tasks: 'Task table', se: 'Software Engineering', ai: 'AI Engineer' };
+const HUB_ROUTER_LABEL = { tasks: 'Task table', se: 'Software Engineering', ai: 'AI Engineer', direct: 'No router' };
 const NOT_RECORDED = 'Route not recorded';
 const OUTSIDE = 'outside';   // project của lượt từ Claude Code ngoài app (qua ~/.claude/settings.json)
 const fmtInt = (n) => Math.round(n || 0).toLocaleString('en-US');
@@ -371,6 +371,7 @@ const AIHub = {
         h('p.muted', 'Running sessions follow a new assignment from their next turn; sessions opened before the first assignment must be reopened.')),
       this.projectMap(),
       this.claudeConfigBox(),
+      this.hookBox(),
     );
   },
 
@@ -477,6 +478,39 @@ const AIHub = {
         ),
         h('div.cc-actions', h('label', h('span', 'Router'), routerSel), h('div.grow'), restore, install),
         !r.enabled && c.installed && h('small.muted', 'The router is off — turns pass straight through until you turn it on.'),
+      ));
+  },
+
+  // Hook SubagentStart (Explore, general-purpose) trong ~/.claude/settings.json: báo subagent mới về AI Hub.
+  // Chỉ thêm / bỏ hook của Git Menorah; hook khác trong SubagentStart giữ nguyên.
+  hookBox() {
+    const c = this.st.hookConfig;
+    const install = h('button.primary', { onclick: async () => {
+      const ok = await confirmBox(c.installed ? 'Reinstall the SubagentStart hook?' : 'Catch subagents with a SubagentStart hook?',
+        `This adds a SubagentStart hook for ${c.wanted.join(' and ')} to ${c.file}. It runs a small script that tells Git Menorah a subagent started; when Git Menorah is closed it does nothing. Other hooks are left alone, and Remove takes only this one out.`,
+        c.installed ? 'Reinstall' : 'Install');
+      if (!ok) return;
+      try { this.st = await window.menorah.hubHookInstall(); toast('SubagentStart hook installed — new Claude Code sessions pick it up'); this.renderHub(); } catch (e) { toast(errText(e)); }
+    } }, c.installed ? 'Reinstall' : 'Install hook');
+    const remove = (c.installed || c.matchers.length > 0) && h('button', { onclick: async () => {
+      if (!(await confirmBox('Remove the SubagentStart hook?', `Takes Git Menorah's hook out of ${c.file}. Other hooks stay.`, 'Remove'))) return;
+      try { this.st = await window.menorah.hubHookRemove(); toast('SubagentStart hook removed'); this.renderHub(); } catch (e) { toast(errText(e)); }
+    } }, 'Remove');
+    return h(c.installed ? 'div.cc-box.on' : 'div.cc-box',
+      h('div.proj-map-head', h('span', 'Catch subagents (SubagentStart)'),
+        c.installed ? h('span.hub-badge.on', `Installed ${timeAgo(c.at)}`) : h('span.hub-badge', 'Not installed')),
+      h('div.cc-body',
+        h('p.muted', 'Claude Code runs this hook when it starts an Explore or general-purpose subagent, in the app or outside it. Git Menorah records the subagent in Flow, uses it to tell the router the agent type when a turn lacks that header, and gives general-purpose subagents of a project with a router one line on staying on their task.'),
+        c.error && h('div.hub-warn', c.error),
+        c.installed && c.missing.length > 0 && h('div.hub-warn', `settings.json no longer has the hook for ${c.missing.join(', ')}. Reinstall to add it back.`),
+        !c.installed && c.matchers.length > 0 && h('div.hub-warn', 'settings.json has a Git Menorah SubagentStart hook this install does not own. Remove it, or Install to take it over.'),
+        h('div.cc-facts',
+          h('span', 'File'), h('code', c.file),
+          h('span', 'Subagents'), h('span', c.wanted.join(', ')),
+          h('span', 'Script'), h('code', c.script),
+          c.others > 0 && h('span', 'Other hooks'), c.others > 0 && h('span', `${c.others} other SubagentStart hook${c.others > 1 ? 's' : ''} in this file — left as they are`),
+        ),
+        h('div.cc-actions', h('div.grow'), remove, install),
       ));
   },
 
@@ -626,7 +660,8 @@ const AIHub = {
     const tot = $('#flow-total');
     if (this.report.error) { host.append(h('div.flow-empty', this.report.error)); return; }
     const t = this.report.total || {};
-    if (tot) tot.textContent = `${fmtInt(t.n)} turns · ${fmtTok((t.input || 0) + (t.output || 0) + (t.cacheRead || 0) + (t.cacheWrite || 0))} tokens · ${fmtUsd(t.cost)} estimated`;
+    const subs = (this.report.subagents || []).map((x) => `${x.agent_type || 'unknown'} ${fmtInt(x.n)}`).join(', ');
+    if (tot) tot.textContent = `${fmtInt(t.n)} turns · ${fmtTok((t.input || 0) + (t.output || 0) + (t.cacheRead || 0) + (t.cacheWrite || 0))} tokens · ${fmtUsd(t.cost)} estimated${subs ? ` · subagents caught: ${subs}` : ''}`;
     const paths = this.flowPaths();
     if (!paths.length) {
       host.append(h('div.flow-empty', this.st.router.enabled ? 'No turns in this period. Open (or reopen) a Claude Code session on the canvas of a project with a router to start recording.' : 'No data yet. Turn on the Inference Router and assign a router to a project in AI Hub, then open a Claude Code session on that project\'s canvas.'));

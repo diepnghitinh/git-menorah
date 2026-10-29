@@ -25,6 +25,10 @@
     <svg class="i" viewBox="0 0 24 24"><circle cx="5" cy="12" r="2.2"/><circle cx="19" cy="5" r="2.2"/><circle cx="19" cy="12" r="2.2"/><circle cx="19" cy="19" r="2.2"/><path d="M7.2 12h9.6M7 11c4-1 6-6 9.8-6M7 13c4 1 6 6 9.8 6"/></svg>
     <span class="rail-lb">AI Hub</span>
   </button>
+  <button class="rail-btn" data-view="plugins" title="Plugins · Vietnamese typing">
+    <svg class="i" viewBox="0 0 24 24"><path d="M10 3.5a2 2 0 1 1 4 0V5h3a2 2 0 0 1 2 2v3h-1.5a2 2 0 1 0 0 4H19v3a2 2 0 0 1-2 2h-3v-1.5a2 2 0 1 0-4 0V19H7a2 2 0 0 1-2-2v-3h1.5a2 2 0 1 0 0-4H5V7a2 2 0 0 1 2-2h3V3.5Z"/></svg>
+    <span class="rail-lb">Plugins</span>
+  </button>
   <button class="rail-btn" data-view="settings" title="Settings · AI providers">
     <svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg>
     <span class="rail-lb">Settings</span>
@@ -102,8 +106,11 @@
 
   <section id="view-git" class="view" hidden>
     <iframe id="git-frame" title="Git" allow="clipboard-write"></iframe>
+    <div id="git-dock-rz" class="dock-rz" title="Drag to resize · double-click to reset" hidden></div>
+    <aside id="git-dock" class="dock" hidden></aside>
   </section>
   <section id="view-hub" class="view hub-view" hidden></section>
+  <section id="view-plugins" class="view hub-view" hidden></section>
   <section id="view-settings" class="view hub-view" hidden></section>
 </main>
 
@@ -117,8 +124,11 @@
 <script src="util.js"></script>
 <script src="vnkey.js"></script>
 <script src="chat.js"></script>
+<script src="dock.js"></script>
+<script src="timeline.js"></script>
 <script src="canvas.js"></script>
 <script src="aihub.js"></script>
+<script src="plugins.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

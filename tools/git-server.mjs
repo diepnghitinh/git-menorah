@@ -432,8 +432,10 @@ async function gitDetail(body) {
 // stash có hai cha lạ, vẽ ra chỉ rối). Trang tự xếp làn.
 async function gitGraph(body) {
   const { dir } = await gitTarget(body);
-  const n = Math.min(Math.max(Number(body.n) || 300, 50), 3000);
-  const r = await git(dir, ['log', '--branches', '--remotes', '--tags', 'HEAD', '--date-order', '-n', String(n + 1),
+  const n = Math.min(Math.max(Number(body.n) || 300, body.head === '1' ? 10 : 50), 3000);
+  // head=1: chỉ lịch sử của HEAD (dòng thời gian tab Review), không lấy nhánh khác.
+  const refs = body.head === '1' ? ['HEAD'] : ['--branches', '--remotes', '--tags', 'HEAD'];
+  const r = await git(dir, ['log', ...refs, '--date-order', '-n', String(n + 1),
     '--format=%H%x1f%P%x1f%an%x1f%ct%x1f%D%x1f%s%x1e'], 30000);
   if (!r.ok) return { commits: [], more: false, error: /does not have any commits|unknown revision/.test(r.err) ? null : hideCred(r.err.trim()) };
   const commits = r.out.split('\x1e').map((x) => x.replace(/^\n/, '')).filter(Boolean).map((x) => {
@@ -548,8 +550,39 @@ async function gitFile(body) {
     const buf = Buffer.alloc(Math.min(st.size, FILE_MAX));
     await fh.read(buf, 0, buf.length, 0);
     if (buf.subarray(0, 8000).includes(0)) return { path, size: st.size, binary: true };
-    return { path, size: st.size, text: buf.toString('utf8'), cut: st.size > FILE_MAX };
+    const cut = st.size > FILE_MAX;
+    return { path, size: st.size, text: buf.toString('utf8'), cut, hash: cut ? null : sha(buf) };
   } finally { await fh.close(); }
+}
+const sha = (buf) => createHash('sha256').update(buf).digest('hex');
+
+// Lưu một tệp đang có từ trình soạn của IDE. base = hash lúc đọc: tệp trên đĩa đã đổi từ đó (agent vừa
+// sửa) thì không ghi, trả conflict cùng nội dung mới — trừ khi force. Chỉ tệp văn bản thường trong
+// worktree; tệp bí mật, .git, symlink ra ngoài, clone phụ (readOnly) bị chặn như khi đọc.
+async function gitSave(body) {
+  const { r, dir } = await gitTarget(body);
+  if (r.readOnly) throw new Error(r.readOnly);
+  const path = String(body.path || ''), text = body.text;
+  if (typeof text !== 'string') throw new Error('Nothing to save.');
+  const parts = path.split('/');
+  if (!path || parts.some((x) => !x || x === '.' || x === '..' || x === '.git' || x.includes('\0') || x.includes('\\'))) throw new Error('Invalid path.');
+  if (isSecret(path)) throw new Error('Secret files cannot be edited here.');
+  const out = Buffer.from(text, 'utf8');
+  if (out.length > FILE_MAX) throw new Error('The file is too large to save here (over 2 MB).');
+  const root = await realpath(dir);
+  const real = await realpath(join(root, path)).catch(() => null);
+  const rel = real && real.startsWith(root + sep) ? real.slice(root.length + 1) : null;
+  if (!rel) throw new Error(`${path} no longer exists.`);
+  if (rel.split(sep).includes('.git') || isSecret(rel)) throw new Error('Secret files cannot be edited here.');
+  const st = await stat(real);
+  if (!st.isFile()) throw new Error(`${path} is not a file.`);
+  if (st.size > FILE_MAX) throw new Error('The file is too large to edit here (over 2 MB).');
+  const cur = await readFile(real);
+  if (cur.subarray(0, 8000).includes(0)) throw new Error('Binary files cannot be edited here.');
+  const hash = sha(cur);
+  if (!body.force && body.base !== hash) return { conflict: true, text: cur.toString('utf8'), hash };
+  if (hash !== sha(out)) await writeFile(real, out);
+  return { ok: true, hash: sha(out), size: out.length };
 }
 
 // Các commit chạm vào một tệp, theo cả tên cũ khi đổi tên (--follow). `path` ở mỗi dòng là tên
@@ -1891,10 +1924,10 @@ function json(res, code, body) {
   res.end(JSON.stringify(body));
 }
 
-function readBody(req) {
+function readBody(req, max = 200000) {
   return new Promise((done, fail) => {
     let s = '';
-    req.on('data', (c) => { s += c; if (s.length > 200000) { fail(new Error('Request body too large.')); req.destroy(); } });
+    req.on('data', (c) => { s += c; if (s.length > max) { fail(new Error('Request body too large.')); req.destroy(); } });
     req.on('end', () => { try { done(s ? JSON.parse(s) : {}); } catch (e) { fail(e); } });
     req.on('error', fail);
   });
@@ -1908,10 +1941,21 @@ const XTERM_DIR = [join(TOOLS, 'git-desktop', 'node_modules', '@xterm'), resolve
 // Bộ gõ tiếng Việt của terminal nằm ở app/vnkey.js của GitMenorah (cùng chỗ với gói xterm).
 const VNKEY = [join(TOOLS, 'git-desktop', 'app', 'vnkey.js'), resolve(TOOLS, '..', '..', 'app', 'vnkey.js')].find(existsSync);
 const VENDOR_RE = /^\/vendor\/(xterm|addon-fit|addon-unicode11|addon-web-links|vnkey)\/((?:lib|css)\/[\w.-]+\.(js|css)|vnkey\.js)$/;
+// Monaco (trình soạn tệp của chế độ IDE): chỉ bản min/vs của gói monaco-editor, cùng chỗ với xterm.
+const MONACO_DIR = [join(TOOLS, 'git-desktop', 'node_modules', 'monaco-editor', 'min'), resolve(TOOLS, '..', '..', 'node_modules', 'monaco-editor', 'min')]
+  .find((d) => existsSync(join(d, 'vs', 'loader.js')));
+const MONACO_RE = /^\/vendor\/monaco\/(vs(?:\/[\w-]+(?:\.[\w-]+)*)+\.(js|css|ttf))$/;
+const VENDOR_TYPES = { js: 'text/javascript; charset=utf-8', css: 'text/css; charset=utf-8', ttf: 'font/ttf' };
 async function serveVendor(res, m) {
   const file = m[1] === 'vnkey' ? m[2] === 'vnkey.js' && VNKEY : XTERM_DIR && join(XTERM_DIR, m[1], m[2]);
   if (!file || !existsSync(file)) return json(res, 404, { error: 'xterm package not found.' });
-  res.writeHead(200, { 'content-type': (m[3] === 'css' ? 'text/css' : 'text/javascript') + '; charset=utf-8', 'cache-control': 'max-age=3600', 'x-content-type-options': 'nosniff' });
+  res.writeHead(200, { 'content-type': VENDOR_TYPES[m[3]], 'cache-control': 'max-age=3600', 'x-content-type-options': 'nosniff' });
+  return res.end(await readFile(file));
+}
+async function serveMonaco(res, m) {
+  const file = MONACO_DIR && join(MONACO_DIR, m[1]);
+  if (!file || !existsSync(file)) return json(res, 404, { error: 'monaco-editor package not found.' });
+  res.writeHead(200, { 'content-type': VENDOR_TYPES[m[2]], 'cache-control': 'max-age=86400', 'x-content-type-options': 'nosniff' });
   return res.end(await readFile(file));
 }
 
@@ -1927,6 +1971,8 @@ export async function gitRoute(req, res, url) {
   }
   const vendor = get && p.match(VENDOR_RE);
   if (vendor) { await serveVendor(res, vendor); return true; }
+  const mon = get && p.match(MONACO_RE);
+  if (mon) { await serveMonaco(res, mon); return true; }
   if (get && p.startsWith('/git-view/')) { await gitView(res, p.slice(10)); return true; }
   if (!p.startsWith('/api/git/')) return false;
   const qp = Object.fromEntries(url.searchParams);
@@ -1947,6 +1993,7 @@ export async function gitRoute(req, res, url) {
   if (get && p === '/api/git/groups') return out(groupsView());
   if (get && p === '/api/git/overview') return out(await gitOverview());
   if (post && p === '/api/git/run') return out(await gitRun(await readBody(req)));
+  if (post && p === '/api/git/save') return out(await gitSave(await readBody(req, FILE_MAX * 3)));
   if (post && p === '/api/git/identity') return out(await gitSetIdentity(await readBody(req)));
   if (post && p === '/api/git/suggest-message') return out(await gitSuggestMessage(await readBody(req)));
   if (post && p === '/api/git/extra') return out(await gitAddExtra(await readBody(req)));

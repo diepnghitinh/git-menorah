@@ -4,38 +4,161 @@ GitMenorah: changelog
 Newest release first.
 
 
-1.0.8 (2026-10-24)
+1.0.9 (2026-10-28)
 ------------------
 
 New
-- Note colors. The dot in a note's title bar opens seven paper colors:
-  yellow, orange, pink, purple, blue, green and gray. Each note keeps its own
-  color, saved with the canvas, and the minimap shows notes in their colors.
-  Existing notes stay yellow.
-- Safety checks in AI Hub. Before running a command on its own, Claude Code
-  sends a separate turn asking whether the command is safe (the auto mode
-  permission classifier, Bash command checks). These turns pass through on
-  Claude as before; "Let the router judge safety checks" has the judge sort
-  them into a task too, so they run on that task's model. Turns carrying
-  Anthropic safeguards always stay on Claude.
-- Vietnamese typing in terminals (Settings › Vietnamese typing), Telex or
-  VNI, in canvas terminals, agent prompts and the Terminal tray of the Git
-  tab. Press Control + Shift or click VI / EN on a terminal's title bar to
-  switch. A word that is not Vietnamese spelling (push, sort, class…) stays as
-  typed. When this computer already runs a Vietnamese keyboard (UniKey,
-  OpenKey, EVKey, GoTiengViet, XKey…) the built-in typing turns itself off.
-  On by default when the system language is Vietnamese.
+- IDE mode in the Project tab, laid out like Cursor. The Graph | Files
+  switch at the bottom right has a third choice, IDE. On the left, three
+  buttons switch between the file Explorer, Changes (stage, unstage and the
+  Commit box) and the agents in the repository. In the middle, files open in
+  tabs, and the Review tab stacks the diff of every uncommitted file, each
+  one foldable, with Discard, Stage and Commit buttons. Switch it from All
+  changes to Latest to see only the files from the agent's last turn. Click a
+  Claude or Codex agent to chat with it in a panel at the right edge (drag
+  its left border to resize). Files the agent changed have a sparkle in the
+  Explorer and in Review, and both keep up as the agent edits. With Follow on
+  (the eye button), each file the agent edits opens in a tab, or Review
+  scrolls to it. The Graph and Files views are unchanged.
+- Edit files in IDE mode. File tabs open in a code editor with syntax
+  colors, search, multiple cursors and a minimap. ⌘S or the Save button
+  writes the file, Revert throws your edits away, and a dot on the tab shows
+  unsaved changes. When the file changes on disk while you edit it (often the
+  agent), saving is paused and a banner lets you load the disk version or
+  overwrite it with yours, so neither change is lost silently. Closing a tab
+  with unsaved edits asks first. Built-in Vietnamese typing is off inside the
+  editor (the macOS input method still works).
+- The message box of the agent chat panel can be made taller: drag its top
+  edge (double-click it to reset). The height is remembered.
+- Right-click a file tab in IDE or Files mode for Close, Close others, Close
+  to the right, Close saved, Close all, Keep open, Save / Revert, Copy path,
+  Reveal in explorer and Open terminal here. Closing several tabs with unsaved
+  edits asks once.
+- Agent chat: press ↑ / ↓ in the message box to bring back earlier prompts,
+  like a shell. What you were typing comes back after the newest one.
+- Agent chat: pick the model from the bar under the message box (Opus,
+  Sonnet, Haiku, Fable, the account default or any model ID). It types
+  /model into the session for you. For Codex it opens Codex's own model list.
+- Drag images or files onto the agent chat panel in IDE mode to attach them.
+  They show as thumbnails and go out with your next message, so the agent
+  can look at the image. Pasted screenshots work too.
+- Each agent you open in the IDE chat panel becomes a tab. Click a tab to
+  switch, use + to open another agent, and × to close the tab (the agent keeps
+  running on its canvas). What you were typing is kept when you switch.
+- The IDE chat panel shows your Claude plan limits (5-hour and weekly, with
+  reset time), plus tokens and cost for the session and for today, as read
+  by AI Hub.
+- Send a message to a stopped agent from the chat (IDE panel or the node's
+  Chat view) and the session resumes by itself, then your message goes in.
+  Resume session and the panel's Resume button work the same way. If
+  Claude's prompt cache has gone cold (past its 5-minute or 1-hour window)
+  and the conversation is large (20k tokens or more), it runs /compact
+  first and waits for it to finish, so your message doesn't re-send the
+  whole old context at full price. The chat shows Resuming… and
+  Compacting… meanwhile.
+- Review tab timeline. A column on the left lists the worktree's history,
+  newest first: Now (the uncommitted changes), each agent turn that edited
+  files, and each commit on the current branch, grouped by day. Click an
+  agent turn to see what you asked, what the agent replied and the diff of
+  every file it changed in that turn. Files that still have uncommitted
+  changes are marked. Click a commit to see its message and file diffs.
+  Filter by All, Agents or Commits, switch worktree from the list at the top,
+  and hide the column with ×.
+- File history in Review. Each file card shows how many agent turns
+  changed it ("3 turns"). Click that to see the file's story, newest
+  first: every turn that edited it, with what you asked, what the agent
+  said about that file and that turn's diff, mixed with the commits that
+  touched the file. Each turn links to the commit it most likely landed in,
+  or is marked uncommitted. The timeline highlights those turns and
+  commits and dims the rest. An agent turn's file cards now show the lines
+  where the agent explained that file, and every turn in the timeline
+  gets a one-line summary of what the agent did.
+- Slimmer scrollbars everywhere: a thin rounded thumb that floats off the
+  edge and blends with light and dark backgrounds, with no arrow buttons.
+  Menus, popups, the chat and the IDE code editor use them too, instead of
+  the system's thick bar.
+- In IDE mode the chat panel follows the repository you pick: it shows
+  only the agents that work in that repository and switches back to the
+  one you used there last. Tabs from other repositories are kept and come
+  back when you return. The + menu lists this repository's agents first,
+  then the others.
+- Fixed: AI Hub filed every Claude Code turn as a "Safety check", because
+  newer Claude Code versions add a safeguards field to normal turns. Main
+  turns now show as Main loop again. Sessions in projects with no router are
+  now recorded too, under "No router". Resume open sessions to pick this up.
+- AI Hub can catch subagents. Under Where routers apply, Install hook adds a
+  SubagentStart hook for Explore and general-purpose to
+  ~/.claude/settings.json. Each subagent Claude Code starts, in the app or
+  outside it, is counted in Flow ("subagents caught"), helps the router tell
+  the agent type when a turn lacks it, and general-purpose subagents of a
+  project with a router get one line asking them to stay on their task.
+  Other SubagentStart hooks are left alone; Remove takes out only this one.
+  The hook does nothing while Git Menorah is closed.
+- Plugins in the left rail: optional add-ons, each with its own switch and
+  options. Vietnamese typing is the first one.
+- Vietnamese typing now works in every text box too: notes, chat, node
+  titles, filters and the Git tab's commit fields, besides terminals. ⌘Z
+  undoes it like normal typing. Password, path, URL and e-mail boxes are left
+  alone.
+- Agent Chat view shows each step as a row you can open: the command and its
+  output, the diff of an edit with line numbers, the lines read, search
+  patterns, a sub-agent's prompt and answer, the to-do list, and the agent's
+  thinking when the transcript has it. Failed steps are red, and the running
+  step spins.
+- Fast copy in the Chat view: a Copy button on every step (command, path,
+  URL, pattern), on outputs and diffs, on code blocks (with their language),
+  and on each message. Click inline `code` to copy it.
+- New Chat view layout. Your message stays pinned at the top while you
+  scroll through the agent's reply. Long messages are cut to three lines;
+  click to read the whole message. Each reply shows when it was sent, and
+  tables have borders and striped rows.
+- The files an agent changed are listed above the message box, with +/- line
+  counts. Click a file to open its diff in the Project tab's IDE mode, next to
+  that agent's chat, or the Review button to see all of them in the Review
+  tab. Earlier turns list their files at the end of the turn.
+- The Chat message box has a bottom bar with the Esc / Enter / 1 / 2 / 3
+  keys, the model, the context size of the last request, the session ID
+  (click one to copy it) and a Send button. Reuse puts one of your earlier
+  messages back in the box. Thin scrollbars, and a button that takes you back
+  to the latest message.
 
 Changed
-- Notes on the canvas no longer follow Dark / Light mode. A note keeps the
-  same paper and ink color in both modes, so it reads the same however the
-  app is set.
-- In Dark mode, terminals on the canvas have a soft light glow around them,
-  so they stand out from the dark canvas.
-- The project menu at the top of the canvas lists the repositories from the
-  Project tab under "From the Project tab": click one to open it as a new
-  board without picking its folder by hand. Repositories that already have a
-  board are left out; type to filter when there are more than 8.
+- Vietnamese typing moved from Settings to Plugins › Vietnamese typing.
+  Earlier choices are kept. Turn the plugin off and your own keyboard app
+  types everywhere as before.
+- macOS: terminals always use the built-in Vietnamese typing, even while
+  GoTiengViet, OpenKey, EVKey or another Vietnamese keyboard runs. While a
+  terminal is focused, Secure Keyboard Entry keeps that app from adding tone
+  marks a second time; it is released when you leave the terminal or switch
+  apps. Text boxes still leave typing to that app (option on the plugin
+  card).
+
+Fixed
+- Vietnamese often failed to type in terminals while GoTiengViet or a
+  similar keyboard app was running.
+
+
+1.0.8 (2026-10-27)
+------------------
+
+New
+- Note colors: the dot in a note's title bar picks one of seven paper colors,
+  saved with the canvas and shown on the minimap. Existing notes stay yellow.
+- Vietnamese typing (Telex or VNI) in canvas terminals, agent prompts and the
+  Git tab's Terminal tray. Control + Shift or the VI / EN chip switches it;
+  words that are not Vietnamese (push, sort, class…) stay as typed. It turns
+  itself off while UniKey, OpenKey, EVKey, GoTiengViet or another Vietnamese
+  keyboard runs. Settings › Vietnamese typing; on by default when the system
+  language is Vietnamese.
+- AI Hub: "Let the router judge safety checks" sorts Claude Code's
+  command safety-check turns into a task like any sub-agent task. Turns
+  carrying Anthropic safeguards always stay on Claude.
+
+Changed
+- Notes keep the same paper and ink color in Dark and Light mode.
+- Canvas terminals get a soft glow in Dark mode.
+- The canvas project menu lists Project tab repositories without a board under
+  "From the Project tab", to open one as a new board in a click.
 
 
 1.0.7 (2026-10-23)

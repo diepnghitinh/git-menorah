@@ -1,5 +1,6 @@
-// Bộ gõ tiếng Việt cho xterm (Telex, VNI) — dùng chung cho node terminal trên canvas và khay
-// Terminal của tab Git (trang Git nạp tệp này qua /vendor/vnkey/vnkey.js).
+// Bộ gõ tiếng Việt (Telex, VNI) — plugin của GitMenorah (rail › Plugins). Dùng chung cho xterm
+// (node terminal trên canvas, khay Terminal của tab Git) và mọi ô nhập: note, chat, ô commit…
+// (trang Git nạp tệp này qua /vendor/vnkey/vnkey.js).
 //
 // Cách làm giống Unikey / OpenKey: giữ chữ của từ đang gõ, mỗi phím dựng lại cả từ rồi gửi vào
 // PTY số backspace (\x7f) đủ xoá phần khác + phần chữ mới. Chữ luôn ở dạng dựng sẵn (NFC) nên
@@ -216,7 +217,76 @@
     return { reset };
   }
 
-  const api = { compose, attach, isVietnamese: (s) => VN_CHAR.test(s) };
+  // ─── Gắn vào ô nhập (input, textarea) của cả trang ──────────────────────
+  // Cùng cách dựng từ như terminal, nhưng sửa thẳng chữ trong ô: chọn phần khác rồi
+  // execCommand('insertText') để ⌘Z và sự kiện input (lưu note, giãn ô chat…) vẫn như gõ tay.
+  // Bỏ qua ô mật khẩu, ô .mono (URL, model, khoá), [data-novn] và textarea ẩn của xterm (attach lo).
+  // opts như attach, trừ el; config(ô đang gõ) để app chọn luật theo từng ô.
+  const TEXT_TYPES = new Set(['text', 'search']);
+  const typable = (t) => (t?.tagName === 'TEXTAREA' || t?.tagName === 'INPUT' && TEXT_TYPES.has(t.type))
+    && !t.readOnly && !t.disabled && !/^(numeric|decimal)$/.test(t.inputMode)
+    && !t.classList.contains('xterm-helper-textarea') && !t.closest('.mono, [data-novn]');
+
+  function attachFields(doc, opts) {
+    let el = null, end = 0, base = '', keys = '', shown = '', chord = false;
+    const reset = () => { el = null; base = keys = shown = ''; };
+    // Con trỏ vẫn ở cuối chữ vừa dựng thì gõ tiếp từ đó.
+    const same = (t) => t === el && t.selectionStart === end && t.selectionEnd === end && t.value.slice(end - shown.length, end) === shown;
+    const replace = (t, next) => {
+      const start = end - shown.length;
+      let p = 0;
+      while (p < shown.length && p < next.length && shown[p] === next[p]) p++;
+      const ins = next.slice(p);
+      if (p === shown.length && !ins) return;
+      t.setSelectionRange(start + p, end);
+      if (!doc.execCommand(ins ? 'insertText' : 'delete', false, ins)) {
+        t.setRangeText(ins, start + p, end, 'end');
+        t.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: ins }));
+      }
+    };
+
+    doc.addEventListener('keyup', (e) => {
+      if (chord && (e.key === 'Control' || e.key === 'Shift')) { chord = false; reset(); opts.onToggle?.(); }
+    }, true);
+    doc.addEventListener('keydown', (e) => {
+      const t = e.target;
+      chord = false;
+      if (!typable(t)) return;
+      chord = (e.key === 'Control' || e.key === 'Shift') && e.ctrlKey && e.shiftKey && !e.altKey && !e.metaKey;
+      const cfg = opts.config(t);
+      const M = METHODS[cfg.method];
+      if (!M) return reset();
+      if (e.isComposing || e.keyCode === 229 || e.key === 'Process' || e.key === 'Dead') return reset();
+      if (e.key.length === 1 && VN_CHAR.test(e.key)) { reset(); return opts.onForeign?.(); }
+      if (e.ctrlKey || e.metaKey || e.altKey) { if (!/^(Control|Shift|Alt|Meta)$/.test(e.key)) reset(); return; }
+      if (e.key === 'Shift' || e.key === 'CapsLock') return;
+      if (e.key === 'Backspace') {
+        // Ô tự xoá một chữ; chỉ cần nhớ từ còn lại.
+        if (shown && same(t)) { base = shown = shown.slice(0, -1); keys = ''; end--; } else reset();
+        return;
+      }
+      if (e.key.length !== 1 || !M.keys.test(e.key)) return reset();
+      if (!same(t)) {
+        // Từ mới: lấy phần chữ ngay trước con trỏ (quay lại sửa "viet" → "việt"); giữa từ thì thôi.
+        reset();
+        const pos = t.selectionStart;
+        if (pos !== t.selectionEnd || /^[\p{L}\p{N}]/u.test(t.value.slice(pos))) return;
+        el = t; end = pos;
+        base = shown = t.value.slice(0, pos).match(/\p{L}*$/u)[0];
+      }
+      // VNI: số đứng đầu từ là số thật.
+      if (!shown && !/^[a-z]$/i.test(e.key)) return reset();
+      keys += e.key;
+      const next = compose(base, keys, cfg.method, cfg.modern);
+      e.preventDefault();
+      replace(t, next);
+      shown = next; end = t.selectionStart;
+    }, true);
+    for (const ev of ['mousedown', 'paste', 'focusin']) doc.addEventListener(ev, reset, true);
+    return { reset };
+  }
+
+  const api = { compose, attach, attachFields, isVietnamese: (s) => VN_CHAR.test(s) };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.VnKey = api;
 })(typeof self !== 'undefined' ? self : this);

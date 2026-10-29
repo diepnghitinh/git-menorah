@@ -40,7 +40,7 @@
     --code-text:#2a3442; --info-text:#1a4fa8; --dot:#c4c9d1; --toast:#1b2330;
     --accent-hover:#185ccc; --danger-border:#efc2c6;
     --banner-border:#f1d3a1; --banner-text:#6b4500; --banner-code:#fff6e6;
-    --scroll:#cfd5dd; --scroll-hover:#a9b1bc;
+    --scroll:rgba(16,24,40,.2); --scroll-hover:rgba(16,24,40,.36); --scroll-active:rgba(16,24,40,.5);
     --add-bg:#e8f6ee; --add-t:#0f5a36; --add-n:#d5efe0; --del-bg:#fdecee; --del-t:#97202c; --del-n:#f8d9dd;
     --hunk-bg:#f1f5fd; --hunk-t:#4a6aa5;
     --hl-k:#8a3fb8; --hl-s:#0f6b3d; --hl-c:#8a94a3; --hl-n:#a14f00; --hl-t:#1f5fbf;
@@ -97,12 +97,16 @@
      A tool screen that needs the width for the graph, so it fills the whole window. */
   main{max-width:none;height:100vh;height:100dvh;display:flex;flex-direction:column;padding:0}
   #panelGit{flex:1;min-height:0;display:flex;flex-direction:column;background:var(--panel);overflow:hidden}
-  /* Thanh cuộn mảnh trong tab Git. Chrome/Safari dùng ::-webkit-scrollbar; Firefox dùng scrollbar-width. */
-  #panelGit ::-webkit-scrollbar{width:6px;height:6px}
-  #panelGit ::-webkit-scrollbar-thumb{background:var(--scroll);border-radius:6px}
-  #panelGit ::-webkit-scrollbar-thumb:hover{background:var(--scroll-hover)}
-  #panelGit ::-webkit-scrollbar-track,#panelGit ::-webkit-scrollbar-corner{background:transparent}
-  @supports not selector(::-webkit-scrollbar){#panelGit *{scrollbar-width:thin;scrollbar-color:var(--scroll) transparent}}
+  /* Thanh cuộn nổi cho cả trang (menu, popup, tab Git): thumb bo tròn cách mép 2px nhờ viền trong suốt
+     + background-clip, màu trong suốt nên hợp mọi nền, rãnh trong suốt, không nút mũi tên.
+     Đổi màu lúc rê/kéo chỉ dùng background-color để không mất background-clip. */
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-thumb{background:var(--scroll);background-clip:padding-box;border:2px solid transparent;border-radius:10px;min-height:32px;min-width:32px}
+  ::-webkit-scrollbar-thumb:hover{background-color:var(--scroll-hover)}
+  ::-webkit-scrollbar-thumb:active{background-color:var(--scroll-active)}
+  ::-webkit-scrollbar-track,::-webkit-scrollbar-corner{background:transparent}
+  ::-webkit-scrollbar-button{display:none}
+  @supports not selector(::-webkit-scrollbar){*{scrollbar-width:thin;scrollbar-color:var(--scroll) transparent}}
   /* Tay kéo đổi cỡ: vạch 2px hiện khi rê chuột, như CompactTable. Bấm đúp để về cỡ mặc định. */
   .gk-rz{position:absolute;top:0;bottom:0;width:7px;z-index:6;cursor:col-resize}
   .gk-rz::after{content:'';position:absolute;top:0;bottom:0;left:2px;width:2px;background:transparent;transition:background .12s}
@@ -142,6 +146,8 @@
   .gk-split .gk-tool.caret .gk-ic{width:12px;height:12px}
   .gk-bar-r{display:flex;align-items:center;gap:2px;flex:1 1 0;justify-content:flex-end;min-width:0}
   .gk-bar-r .sub{font-size:11.5px;color:var(--faint);margin-right:6px;white-space:nowrap;font-variant-numeric:tabular-nums}
+  /* IDE hẹp hơn vì khung Chat của agent ở bên phải: bỏ dòng "fetched …", nút gọn lại */
+  @media (max-width:1100px){#panelGit.ide .gk-bar-r .sub{display:none}#panelGit.ide .gk-tool{min-width:44px;padding:5px 6px}}
   .gk-prog{display:inline-block;width:64px;height:4px;margin-left:7px;border-radius:2px;background:var(--border);vertical-align:middle;overflow:hidden}
   .gk-prog i{display:block;height:100%;background:var(--accent);transition:width .3s}
   .gk-vsep{width:1px;align-self:stretch;background:var(--border);margin:6px 4px}
@@ -236,6 +242,13 @@
   .gk-ag .w{color:var(--faint);font-size:11px}
   .gk-ag .ln{grid-column:3/5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:11.5px}
   .gk-ag .sub{color:var(--ok);font-size:11px}
+  .gk-ag.on{background:var(--accent-soft)}
+  .gk-ag{position:relative}
+  .gk-ag .gk-agcv{position:absolute;right:10px;top:3px;width:20px;height:18px;padding:0;display:none;align-items:center;justify-content:center;border:1px solid transparent;border-radius:4px;background:transparent;color:var(--muted)}
+  .gk-ag:hover .gk-agcv{display:inline-flex}
+  .gk-ag:hover .w{visibility:hidden}
+  .gk-agcv:hover{color:var(--text);background:var(--panel);border-color:var(--border)}
+  .gk-agcv .gk-ic{width:12px;height:12px}
   /* Đầu worktree hai dòng: tên trên, nhánh rút gọn dưới; không rớt chữ, chỉ cắt bằng "…" */
   .gk-agh{align-items:flex-start;padding:5px 8px 5px 12px;margin-top:2px}
   .gk-agh > .gk-ic{margin-top:3px}
@@ -342,13 +355,16 @@
   .gk-file.sel{background:var(--accent-soft)}
   .gk-file .st{width:16px;height:16px;border-radius:4px;font-family:var(--mono);font-size:10px;font-weight:700;display:grid;
     place-items:center;flex:none;background:var(--chip);color:var(--muted)}
-  .gk-file .st.M{background:var(--warn-soft);color:var(--warn)}
-  .gk-file .st.A{background:var(--ok-soft);color:var(--ok)}
-  .gk-file .st.D{background:var(--danger-soft);color:var(--danger)}
-  .gk-file .st.R,.gk-file .st.C{background:var(--accent-soft);color:var(--accent)}
-  .gk-file .st.U{background:var(--danger);color:#fff}
+  .rv-h .st{width:16px;height:16px;border-radius:4px;font:700 10px/16px var(--mono);text-align:center;flex:none}
+  :is(.gk-file,.rv-h) .st.M{background:var(--warn-soft);color:var(--warn)}
+  :is(.gk-file,.rv-h) .st.A{background:var(--ok-soft);color:var(--ok)}
+  :is(.gk-file,.rv-h) .st.D{background:var(--danger-soft);color:var(--danger)}
+  :is(.gk-file,.rv-h) .st.R,:is(.gk-file,.rv-h) .st.C{background:var(--accent-soft);color:var(--accent)}
+  :is(.gk-file,.rv-h) .st.U{background:var(--danger);color:#fff}
   .gk-file .p{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .gk-file .p .d{color:var(--faint)}
+  .gk-file .ai{flex:none;display:inline-flex;color:var(--accent)}
+  .gk-file .ai .gk-ic{width:12px;height:12px}
   .gk-file.dir{color:var(--muted);font-weight:600}
   .gk-file.dir > .gk-ic{width:13px;height:13px;color:var(--faint)}
   .gk-file.dir > .gk-tw{width:10px;height:10px;margin-right:-3px}
@@ -423,6 +439,161 @@
   #panelGit.files .gk-body{display:none}
   #panelGit.files .gk-ex{display:grid}
   #panelGit.dash .gk-ex{display:none}
+  /* Chế độ IDE (như Cursor): Explorer · Changes · Agents | tab tệp + Review | khung Chat của app cha.
+     Dùng lại khung của Files, bỏ cột lịch sử; cột WIP + Commit và danh sách agent của Graph được dời sang cột trái. */
+  #panelGit.ide .gk-body{display:none}
+  #panelGit.ide .gk-ex{display:grid;grid-template-columns:var(--ex-side) minmax(0,1fr)}
+  #panelGit.ide .ex-log,#panelGit.ide .gk-ex .gk-rz[data-rz=exright]{display:none}
+  .ex-act{display:none}
+  #panelGit.ide .ex-act{display:flex;gap:2px;padding:5px 8px;border-bottom:1px solid var(--border);flex:none}
+  .ex-act button{position:relative;width:32px;height:28px;padding:0;border:0;border-radius:6px;background:none;color:var(--faint);display:inline-flex;align-items:center;justify-content:center}
+  .ex-act button:hover{background:var(--hover);color:var(--text)}
+  .ex-act button.on{color:var(--text);background:var(--hover)}
+  .ex-act .gk-ic{width:17px;height:17px}
+  .ex-act .n{position:absolute;right:0;top:1px;min-width:14px;height:14px;padding:0 3px;border-radius:7px;background:var(--accent);color:#fff;font:600 9.5px/14px var(--mono)}
+  .ex-act .n.run{background:var(--ok)}
+  #exScm,#exAg{display:none;flex:1;min-height:0;flex-direction:column}
+  #panelGit.ide .ex-side:not([data-ide=files]) > :is(.ex-h,.gk-filter,.ex-tree){display:none}
+  #panelGit.ide .ex-side[data-ide=scm] #exScm,#panelGit.ide .ex-side[data-ide=agents] #exAg{display:flex}
+  #exScm .gk-right{flex:1;border-left:0}
+  #exScm .gk-sect-h{padding-left:10px;gap:4px}
+  #exScm .gk-sect-h button{white-space:nowrap;padding:2px 7px}
+  #exAg #gkAgents{flex:1;min-height:0;overflow:auto;padding:6px 0 16px}
+  .ex-it .ai{margin-left:auto;padding-left:6px;display:inline-flex;color:var(--accent)}
+  .ex-it .ai .gk-ic{width:12px;height:12px;color:inherit}
+  .ex-it .ai + .mk{margin-left:0}
+  /* Trình soạn tệp của IDE (Monaco). */
+  .ex-body.ed{overflow:hidden;position:relative;padding:0}
+  .ed-host{position:absolute;inset:0}
+  /* Thanh cuộn của Monaco tự vẽ (không dùng ::-webkit-scrollbar): bo tròn cho giống phần còn lại; màu đặt trong theme */
+  .ed-host .monaco-scrollable-element>.scrollbar>.slider{border-radius:10px}
+  .ex-body.ed .msg{padding:16px}
+  .ex-crumb .chip.unsaved{background:var(--warn-soft);color:var(--warn);border-color:transparent;font-size:10.5px}
+  .ed-warn{display:flex;align-items:center;gap:8px;padding:6px 12px;background:var(--warn-soft);color:var(--warn);border-bottom:1px solid var(--border);font-size:12.5px;flex:none}
+  .ed-warn span{flex:1;min-width:0}
+  .ed-warn button{padding:2px 9px;font-size:11.5px}
+  .ex-tab.dirty .x{opacity:1}
+  .ex-tab.dirty .x .gk-ic{display:none}
+  .ex-tab.dirty .x::before{content:'';width:8px;height:8px;border-radius:50%;background:var(--text);opacity:.65}
+  .ex-tab.dirty .x:hover::before{display:none}
+  .ex-tab.dirty .x:hover .gk-ic{display:inline-block}
+  /* Review: mọi thay đổi chưa commit xếp chồng, mỗi tệp một khung gập được. */
+  .rv-bar .seg button:disabled{opacity:.5}
+  .rv-bar .meta{max-width:none}
+  .rv-bar .a,.rv-h .a{color:var(--ok);font-weight:600}
+  .rv-bar .d,.rv-h .ad .d{color:var(--danger);font-weight:600}
+  .ex-body.rv{padding:10px 12px 24px;background:var(--subtle)}
+  .rv-file{border:1px solid var(--border);border-radius:8px;background:var(--panel);margin-bottom:10px}
+  .rv-h{display:flex;align-items:center;gap:6px;padding:5px 8px;border-bottom:1px solid var(--line);border-radius:8px 8px 0 0;background:var(--panel);
+    font:12.5px var(--sans);cursor:pointer;position:sticky;top:-10px;z-index:1}
+  .rv-file.shut .rv-h{border-bottom:0;border-radius:8px}
+  .rv-file.shut .rv-b{display:none}
+  .rv-h .gk-tw{width:12px;height:12px;color:var(--faint)}
+  .rv-h .p{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--mono);font-size:12px}
+  .rv-h .p:hover{text-decoration:underline}
+  .rv-h .p .d{color:var(--faint)}
+  .rv-h .ai{display:inline-flex;color:var(--accent)}
+  .rv-h .ai .gk-ic{width:12px;height:12px}
+  .rv-h .chip{font-size:10px;padding:0 6px}
+  .rv-h .spacer{flex:1}
+  .rv-h .ad{font:11.5px var(--mono);white-space:nowrap}
+  .rv-h button{padding:2px 9px;font-size:11.5px}
+  .rv-b{overflow-x:auto}
+  .rv-b .msg{padding:16px}
+  /* Dòng thời gian của Review: cột trái bây giờ → quá khứ, khung phải là mốc đang chọn. */
+  .rv-wrap{display:flex;flex:1;min-height:0}
+  .rv-pane{flex:1;min-width:0;display:flex;flex-direction:column}
+  .rv-pane .ex-body{flex:1;min-height:0}
+  .rv-tl{width:268px;flex:none;display:flex;flex-direction:column;border-right:1px solid var(--line);background:var(--panel);min-height:0}
+  .rv-tl.off{width:28px;align-items:center;padding-top:8px;cursor:pointer;color:var(--muted)}
+  .rv-tl.off:hover{color:var(--text);background:var(--subtle)}
+  .tl-h{display:flex;align-items:center;gap:6px;padding:0 6px 0 12px;min-height:32px;border-bottom:1px solid var(--line);font-size:12px;font-weight:600;color:var(--muted);flex:none}
+  .tl-h .gk-ic{width:14px;height:14px}
+  .tl-x{border:none;background:none;padding:3px;color:var(--faint);display:inline-flex}
+  .tl-x:hover{color:var(--text)}
+  .tl-x .gk-ic{width:13px;height:13px}
+  .tl-tools{display:flex;flex-direction:column;gap:6px;padding:8px 10px;border-bottom:1px solid var(--line);flex:none}
+  .tl-tools .seg{align-self:flex-start}
+  .tl-tools .seg button{padding:3px 10px;font-size:11.5px}
+  .tl-wt{font-size:12px;padding:3px 6px;max-width:100%}
+  .tl-list{flex:1;min-height:0;overflow-y:auto;padding:4px 0 16px;position:relative}
+  .tl-day{padding:10px 12px 4px 30px;font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--faint)}
+  .tl-it{position:relative;padding:6px 10px 7px 30px;cursor:pointer;border-left:2px solid transparent}
+  .tl-it::before{content:'';position:absolute;left:15px;top:0;bottom:0;width:1px;background:var(--border)}
+  .tl-it:hover{background:var(--subtle)}
+  .tl-it.on{background:var(--accent-soft);border-left-color:var(--accent)}
+  .tl-dot{position:absolute;left:10px;top:10px;width:11px;height:11px;border-radius:50%;background:var(--panel);border:2px solid #5d6878;box-sizing:border-box;z-index:1}
+  .tl-dot.claude{border-color:#d97757}
+  .tl-dot.codex{border-color:#1b2330}
+  .tl-dot.commit{border-radius:2px;border-color:var(--faint)}
+  .tl-dot.now{background:var(--accent);border-color:var(--accent)}
+  .tl-dot.run{background:#d97757;animation:tl-pulse 1.4s ease-in-out infinite}
+  @keyframes tl-pulse{50%{opacity:.35}}
+  .tl-1{display:flex;align-items:center;gap:6px;min-width:0;font-size:12.5px}
+  .tl-1 .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)}
+  .tl-it.commit .tl-1 .nm{color:var(--muted)}
+  .tl-1 .tm{font:11px var(--mono);color:var(--faint);flex:none}
+  :is(.tl-1,.tl-bar,.tl-se-h,.tl-fc) .mk{width:15px;height:15px;border-radius:4px;font:700 9.5px/15px var(--mono);text-align:center;color:#fff;background:#5d6878;flex:none}
+  :is(.tl-1,.tl-bar,.tl-se-h,.tl-fc) .mk.claude{background:#d97757}
+  :is(.tl-1,.tl-bar,.tl-se-h,.tl-fc) .mk.codex{background:#1b2330}
+  .tl-2{margin-top:2px;font-size:12px;color:var(--muted);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word}
+  .tl-3{margin-top:2px;font-size:11px;color:var(--faint)}
+  .tl-3 .ad,.tl-bar .ad{font-family:var(--mono)}
+  :is(.tl-3,.tl-bar) .a{color:var(--ok);font-weight:600}
+  :is(.tl-3,.tl-bar) .d{color:var(--danger);font-weight:600}
+  :is(.tl-3,.tl-bar) .run{color:#d97757;font-weight:600}
+  .tl-3 .sha{font-family:var(--mono)}
+  .tl-empty{padding:12px 14px 0 30px;font-size:11.5px;color:var(--faint);line-height:1.5}
+  .tl-bar button{padding:2px 9px;font-size:11.5px;white-space:nowrap;flex:none}
+  .tl-nm{font-weight:600;color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:40%}
+  .tl-bar .meta{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tl-sha{font-family:var(--mono);display:inline-flex;align-items:center;gap:4px}
+  .tl-sha .gk-ic{width:12px;height:12px}
+  .tl-intent{border:1px solid var(--border);border-radius:8px;background:var(--panel);margin-bottom:12px;padding:10px 12px;position:relative}
+  .tl-intent .lb{font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--faint);margin-bottom:3px}
+  .tl-intent .tx{white-space:pre-wrap;word-break:break-word;font-size:12.5px;line-height:1.5;color:var(--text)}
+  .tl-r{margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
+  .tl-r .tx{color:var(--muted)}
+  .tl-intent .tx.ex-md{white-space:normal;max-width:none;margin:0;padding:0;font-size:12.5px;line-height:1.55}
+  .tl-intent .ex-md :is(p,ul,ol,pre,blockquote,table){margin:0 0 6px}
+  .tl-intent .ex-md :is(h1,h2,h3,h4,h5,h6){margin:8px 0 4px;font-size:13px}
+  .tl-intent:not(.open) .tx{max-height:7.5em;overflow:hidden;-webkit-mask-image:linear-gradient(#000 60%,transparent)}
+  .tl-more{margin-top:6px;border:none;background:none;padding:0;color:var(--accent);font-size:12px}
+  .tl-g{margin-top:2px;font-size:11.5px;color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .tl-fc{display:inline-flex;align-items:center;gap:3px;cursor:pointer}
+  .tl-fc:hover{background:var(--accent-soft);color:var(--accent)}
+  .tl-fc .mk{width:11px;height:11px;border-radius:3px;font-size:7.5px;line-height:11px}
+  .tl-focus{display:flex;align-items:center;gap:4px;font-size:11.5px;color:var(--muted);min-width:0}
+  .tl-focus b{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);font-family:var(--mono);font-weight:500}
+  .tl-list.focus .tl-it:not(.hit):not(.now){opacity:.4}
+  .tl-it.hit .tl-dot{box-shadow:0 0 0 3px var(--accent-soft)}
+  .tl-why{display:flex;gap:8px;padding:7px 12px;border-bottom:1px solid var(--line);background:var(--accent-soft);font-size:12px;line-height:1.5;color:var(--text);word-break:break-word}
+  .tl-why .gk-ic{width:13px;height:13px;color:var(--accent);flex:none;margin-top:2px}
+  .tl-fs{padding:2px 0 8px}
+  .tl-se{position:relative;padding:0 0 16px 24px}
+  .tl-se::before{content:'';position:absolute;left:5px;top:8px;bottom:-8px;width:1px;background:var(--border)}
+  .tl-se:last-child::before{display:none}
+  .tl-se .tl-dot{left:0;top:3px}
+  .tl-se-h{display:flex;align-items:center;gap:6px;min-width:0;font-size:12.5px;margin-bottom:5px}
+  .tl-se-h .nm{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;color:var(--text)}
+  .tl-se.commit .tl-se-h .nm{font-weight:500}
+  .tl-se.commit .tl-se-h[data-tl]{cursor:pointer}
+  .tl-se.commit .tl-se-h[data-tl]:hover .nm{text-decoration:underline}
+  .tl-se-h .tm{font:11px var(--mono);color:var(--faint);flex:none}
+  .tl-se-h .chip{font-size:10px;padding:0 6px;flex:none}
+  .tl-se-h .chip code{font:10px var(--mono)}
+  .tl-se-h button{padding:2px 9px;font-size:11.5px;white-space:nowrap;flex:none}
+  .tl-se-h .ad{font:11px var(--mono);flex:none}
+  .tl-se-h .ad .a{color:var(--ok);font-weight:600}
+  .tl-se-h .ad .d{color:var(--danger);font-weight:600}
+  .tl-se-q,.tl-se-w{font-size:12.5px;line-height:1.5;margin-bottom:6px;word-break:break-word}
+  .tl-se-q{color:var(--text);white-space:pre-wrap;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+  .tl-se-w{color:var(--muted)}
+  .tl-se .lb{font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--faint);margin-right:6px}
+  .tl-se-m{font-size:11px;color:var(--faint)}
+  .tl-se-m code{font-family:var(--mono)}
+  .tl-se .rv-file{margin-bottom:0}
+  :is(.tl-intent,.tl-why,.tl-se-h,.tl-se-q,.tl-se-w,.tl-se-m){font-family:var(--sans)}
   .gk-ex .gk-rz[data-rz=exside]{left:calc(var(--ex-side) - 2px)}
   .gk-ex .gk-rz[data-rz=exright]{right:calc(var(--ex-right) - 5px)}
   .ex-side,.ex-log{display:flex;flex-direction:column;min-height:0;background:var(--subtle);font-size:12.5px}
@@ -450,7 +621,8 @@
   .ex-note{padding:10px 14px;color:var(--faint);font-size:12px}
   .ex-main{display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--panel)}
   .ex-tabs{display:flex;overflow-x:auto;overflow-y:hidden;background:var(--subtle);border-bottom:1px solid var(--border);flex:none;min-height:35px}
-  .ex-tabs::-webkit-scrollbar{height:3px!important}
+  .ex-tabs::-webkit-scrollbar{height:4px!important}
+  .ex-tabs::-webkit-scrollbar-thumb{border-width:0;min-width:40px}
   .ex-tab{display:flex;align-items:center;gap:6px;padding:0 6px 0 12px;height:35px;border-right:1px solid var(--border);font-size:12.5px;
     color:var(--muted);cursor:pointer;white-space:nowrap;flex:none;max-width:260px;user-select:none}
   .ex-tab .nm{overflow:hidden;text-overflow:ellipsis}
@@ -629,7 +801,7 @@
     --code-text:#c9d2de; --info-text:#9cc0ff; --dot:#4a5361; --toast:#2a313b;
     --accent-hover:#6aa1ff; --danger-border:#5a2a30;
     --banner-border:#5a4318; --banner-text:#f0cf8a; --banner-code:#2a2110;
-    --scroll:#3a434f; --scroll-hover:#566170;
+    --scroll:rgba(255,255,255,.14); --scroll-hover:rgba(255,255,255,.26); --scroll-active:rgba(255,255,255,.38);
     --add-bg:#11291c; --add-t:#8fe0b2; --add-n:#173823; --del-bg:#34171b; --del-t:#ffadb3; --del-n:#451d22;
     --hunk-bg:#172235; --hunk-t:#8fb0e8;
     --hl-k:#d19cf5; --hl-s:#8fd6a8; --hl-c:#6f7a89; --hl-n:#f0b46a; --hl-t:#79b0ff;
@@ -666,7 +838,8 @@
     <div class="gk-ex" id="gkEx">
       <div class="gk-rz" data-rz="exside" title="Drag to resize · double-click to reset"></div>
       <div class="gk-rz" data-rz="exright" title="Drag to resize · double-click to reset"></div>
-      <aside class="ex-side">
+      <aside class="ex-side" data-ide="files">
+        <div class="ex-act" id="exAct"></div>
         <div class="ex-h"><b id="exTitle">Explorer</b>
           <button data-ex="term" id="exTerm" hidden title="Open a terminal in this folder"></button>
           <button data-ex="reload" title="Reload the file tree"></button>
@@ -676,6 +849,8 @@
           <input type="text" id="exFilter" placeholder="Go to file… (⌘P)" autocomplete="off" spellcheck="false" />
         </div>
         <div class="ex-tree" id="exTree"></div>
+        <div id="exScm"></div>
+        <div id="exAg"></div>
       </aside>
       <section class="ex-main">
         <div class="ex-tabs" id="exTabs"></div>
@@ -745,6 +920,7 @@ function setTheme(m) {
   applyTheme();
 }
 window.onThemeChange = () => {
+  edTheme();
   gkRenderBar();
   gtRetheme();
   mnTheme();
@@ -768,6 +944,7 @@ const GK_ROW = 28, GK_LANE = 14, GK_REFW = 200;
 const GK_COLORS = ['#1f6feb', '#d4549b', '#16a34a', '#e8833a', '#7c5cd6', '#0e9fb0', '#b45309', '#64748b'];
 const GK_IC = {
   down: '<path d="m6 9 6 6 6-6"/>',
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
   pull: '<path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/>',
   push: '<path d="M12 21V9"/><path d="m7 14 5-5 5 5"/><path d="M5 3h14"/>',
   branch: '<path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>',
@@ -796,6 +973,7 @@ const GK_IC = {
   ext: '<path d="M14 4h6v6"/><path d="M20 4 10 14"/><path d="M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5"/>',
   term: '<path d="m5 7 5 5-5 5"/><path d="M12 19h7"/>',
   files: '<path d="M15 2H8a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z"/><path d="M15 2v5h5"/><path d="M4 7v13a2 2 0 0 0 2 2h10"/>',
+  ide: '<path d="m8 7-5 5 5 5"/><path d="m16 7 5 5-5 5"/><path d="m13.5 4-3 16"/>',
   graph: '<circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="12" r="2.5"/><path d="M6 8.5v7"/><path d="M8.3 7.2c4 1 7.4 2.3 7.6 4.3"/>',
   copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/>',
 };
@@ -1008,7 +1186,7 @@ async function gitLoadDetail() {
   if (sig === gitSig && gitG) {
     gitD = d; gkRenderBar();
     if (gitDiffOpen && !gitDiffOpen.sha) gkLoadDiff(true);   // sửa tiếp tệp đã sửa: trạng thái không đổi, nội dung đổi
-    if (gitUi.mode === 'files') exLoad();
+    if (exOn()) exLoad();
     return;
   }
   let g;
@@ -1018,13 +1196,13 @@ async function gitLoadDetail() {
   gitRows = gkLayout(g.commits);
   gitTips = gkTipMap(g.commits);
   const dirty = d.status.files?.length > 0;
-  if (gitPick === 'wip' && !dirty) gitPick = null;
+  if (gitPick === 'wip' && !dirty && !gkIde()) gitPick = null;
   if (gitPick && gitPick !== 'wip' && !g.commits.some((c) => c.h === gitPick) && !d.stash.some((x) => x.hash === gitPick)) gitPick = null;
   if (!gitPick) gitPick = dirty ? 'wip' : d.status.oid || null;
   gkRenderAll();
   if (gitDiffOpen && !gitDiffOpen.sha) gkSyncDiff();
   if (gitPick && gitPick !== 'wip' && gitInfo?.sha !== gitPick) gkLoadInfo();
-  if (gitUi.mode === 'files') exLoad();
+  if (exOn()) exLoad();
 }
 
 function gkEmpty(msg) {
@@ -1193,6 +1371,7 @@ function gkPickSha(sha, scroll) {
 
 // ── Thanh công cụ ──
 function gkRenderBar() {
+  mnMode();
   const d = gitD, s = d?.status || {}, r = gitList.find((x) => x.id === gitSel?.repo);
   const lock = !d || !!d.readOnly || !!s.error || gitBusy;
   const dis = (cond) => (lock || cond ? 'disabled' : '');
@@ -1248,7 +1427,7 @@ function gkSelect(repo, wt) {
   if (gitView !== 'repo') { gitView = 'repo'; $('panelGit').classList.remove('dash'); }
   gitSel = { repo, wt: wt || '' };
   gitSaveSel();
-  gitLoadDetail();
+  return gitLoadDetail();
 }
 function gkSelectWtPath(p) {
   if (p === gitD.mainPath) return gkSelect(gitD.id, '');
@@ -1418,7 +1597,7 @@ function gitMenu(at, items) {
     acts.push(it);
     return `<button class="it ${it.danger ? 'danger' : ''}" data-i="${acts.length - 1}" ${it.disabled ? 'disabled' : ''} ${it.title ? `title="${esc(it.title)}"` : ''}>
       ${hasCk ? `<span class="ck">${it.check ? ic('check') : ''}</span>` : ''}<span class="lb">${it.html || esc(it.label)}</span>${it.sub ? `<span class="sb">${esc(it.sub)}</span>` : ''}</button>`;
-  }).join('').replace(/^(<hr>)+|(<hr>)+$/g, '');
+  }).join('').replace(/(<hr>)+/g, '<hr>').replace(/^<hr>|<hr>$/g, '');
   // Mục `pin` đứng yên ở đáy menu, phần trên cuộn — danh sách nhánh dài không đẩy chúng khuất.
   const pin = items.filter((it) => it.pin);
   if (pin.length) {
@@ -1527,11 +1706,24 @@ const join2 = (a, b) => a.replace(/\/$/, '') + '/' + b;
 
 // ── Tab Agents ở cột trái: chỉ có khi trang này nhúng trong GitMenorah ──
 // App cha (menorah://app) gửi danh sách agent trên các canvas; ở đây xếp agent vào worktree
-// của repo đang xem theo cwd. Bấm agent → app nhảy tới node; nút Claude/Codex ở worktree →
-// app mở agent mới ở thư mục đó. Chỉ nhận tin từ chính cửa sổ cha.
-const MN = { on: false, agents: [], tab: 'list' };
+// của repo đang xem theo cwd. Bấm agent Claude / Codex → app mở khung Chat của nó ở cột phải
+// (terminal thì nhảy tới node); nút Claude/Codex ở worktree → app mở agent mới ở thư mục đó.
+// Chỉ nhận tin từ chính cửa sổ cha.
+// dock: node đang mở ở khung Chat; touched: tệp (đường dẫn tuyệt đối) agent đó đã sửa.
+const MN = { on: false, agents: [], tab: 'list', dock: null, touched: new Set(), latest: new Set() };
 const normPath = (p) => p.split('/').reduce((o, x) => (x === '..' ? o.slice(0, -1) : x === '.' || (x === '' && o.length) ? o : [...o, x]), []).join('/') || '/';
 function mnPost(msg) { window.parent.postMessage(msg, '*'); }
+// Báo app cha đang ở chế độ IDE hay không — khung Chat của agent chỉ hiện ở IDE — kèm các worktree
+// của repo đang xem: khung Chat chỉ hiện tab của agent làm việc trong repo đó. Repo đang nạp: chờ.
+let mnIdeSent = null;
+function mnMode(force) {
+  const on = gkIde() && gitView === 'repo', roots = on ? gkWtRoots().map((w) => w.path) : [];
+  if (!MN.on || (on && !gitD)) return;
+  const sig = `${on}|${roots.join('\n')}`;
+  if (sig === mnIdeSent && !force) return;
+  mnIdeSent = sig;
+  mnPost({ type: 'menorah:mode', ide: on, roots });
+}
 // Tin đầu tiên của app cha = đang chạy trong GitMenorah: hiện tab Agents, nút terminal, khay Terminal.
 function mnEnable() {
   if (MN.on) return;
@@ -1540,12 +1732,14 @@ function mnEnable() {
   $('exTerm').hidden = false;
   gkRenderBar();
   gtEnable();
+  gkApplyMode();
+  gitRenderHistory();
 }
 function mnSide(tab) {
   MN.tab = tab === 'agents' && MN.on ? 'agents' : 'list';
   for (const b of $('gkSideTabs').querySelectorAll('button')) b.classList.toggle('on', b.dataset.side === MN.tab);
   $('gkTree').hidden = MN.tab !== 'list';
-  $('gkAgents').hidden = MN.tab !== 'agents';
+  $('gkAgents').hidden = MN.tab !== 'agents' && !gkIde();
   $('gkFilter').placeholder = MN.tab === 'agents' ? 'Filter agents, worktrees…' : 'Filter branches, worktrees…';
   gkRenderAgents();
 }
@@ -1567,13 +1761,15 @@ function gkRenderAgents() {
   const n = $('gkAgN');
   n.textContent = all.length ? (run ? `${run}/${all.length}` : all.length) : '';
   n.classList.toggle('run', run > 0);
-  if (MN.tab !== 'agents') return;
+  exRenderAct();
+  if (MN.tab !== 'agents' && !gkIde()) return;
   const tw = (shut) => ic('down', 'gk-tw' + (shut ? ' shut' : ''));
   const ST = { running: 'Running', idle: 'Waiting for input', stopped: 'Stopped' };
-  const row = (a) => `<div class="gk-ag" data-node="${esc(a.nodeId)}" data-project="${esc(a.projectId)}" data-canvas="${esc(a.canvasId)}"
-    title="${esc(`${a.title}\n${ST[a.status] || a.status} · ${a.projectName} › ${a.canvasName}\nClick to open on the canvas`)}">
+  const ide = gkIde(), chat = (a) => ide && a.agent !== 'shell';
+  const row = (a) => `<div class="gk-ag${ide && a.nodeId === MN.dock ? ' on' : ''}" data-node="${esc(a.nodeId)}" data-project="${esc(a.projectId)}" data-canvas="${esc(a.canvasId)}" data-agent="${esc(a.agent)}"
+    title="${esc(`${a.title}\n${ST[a.status] || a.status} · ${a.projectName} › ${a.canvasName}\n${chat(a) ? 'Click to chat with it here' : 'Click to open on the canvas'}`)}">
     <span class="dot ${esc(a.status)}"></span><span class="mk ${esc(a.agent)}">${{ claude: 'C', codex: 'X' }[a.agent] || '$'}</span>
-    <span class="nm">${esc(a.title)}</span><span class="w">${esc(a.canvasName)}</span>
+    <span class="nm">${esc(a.title)}</span><span class="w">${esc(a.canvasName)}</span>${chat(a) ? `<button class="gk-agcv" data-cv title="Open on the canvas">${ic('ext')}</button>` : ''}
     ${a.last || a.subs ? `<span class="ln">${a.subs ? `<span class="sub">${a.subs} sub agent${a.subs > 1 ? 's' : ''} · </span>` : ''}${esc(a.last || '')}</span>` : ''}</div>`;
   // Nhánh feat/2026-10-20-16-31_bu-node-farms đã có tên worktree ở dòng trên → dòng dưới chỉ còn "feat · 20/10 16:31".
   const brTail = (w) => {
@@ -1592,6 +1788,69 @@ function gkRenderAgents() {
       shut ? '' : list.map(row).join('')}</div>`;
   }).join('') || '<div class="gd-empty">No matching worktrees.</div>';
 }
+
+// ─── Xem trước thay đổi của agent ──────────────────────────────────────────
+// Thư mục gốc của worktree đang xem và của mọi worktree trong repo đó.
+function gkWtRoots(d = gitD) {
+  if (!d) return [];
+  return [{ wt: '', path: normPath(d.mainPath) }, ...d.worktrees.map((w) => ({ wt: w.rel, path: normPath(join2(d.mainPath, w.rel)) }))];
+}
+const gkUnder = (p, root) => p === root || p.startsWith(root + '/');
+function gkCurRoot() { return gkWtRoots().find((w) => w.wt === (gitSel?.wt || ''))?.path || ''; }
+// Tệp ở WIP mà agent của khung Chat đã sửa.
+function gkTouched(rel) { const r = gkIde() && gkCurRoot(); return !!r && MN.touched.has(r + '/' + rel); }
+
+// Agent đang chạy trong worktree đang xem: đọc lại trạng thái theo nhịp danh sách agent (3 giây)
+// thay vì 10 giây, để danh sách WIP và diff đang mở theo kịp từng lần agent ghi tệp.
+function mnLive() {
+  const r = gkCurRoot();
+  if (!r || !gkIde() || gitView !== 'repo' || gitBusy || document.hidden) return;
+  if (MN.agents.some((a) => a.status === 'running' && gkUnder(a.cwd, r))) gitLoadDetail();
+}
+let mnRefreshT = 0;
+function mnRefreshSoon() { clearTimeout(mnRefreshT); mnRefreshT = setTimeout(() => { if (gitView === 'repo' && gitSel && !gitBusy) gitLoadDetail(); }, 300); }
+
+// Sang IDE ở worktree chứa đường dẫn p (tuyệt đối): trong repo đang xem trước, rồi tới các repo khác.
+async function mnLocate(p) {
+  const pick = (roots) => roots.filter((w) => gkUnder(p, w.path)).sort((a, b) => b.path.length - a.path.length)[0];
+  let loc = pick(gkWtRoots()), repo = gitD?.id;
+  if (!loc) {
+    const r = gitList.filter((x) => gkUnder(p, normPath(x.dir))).sort((a, b) => b.dir.length - a.dir.length)[0];
+    if (!r) return false;
+    repo = r.id; loc = { wt: '', path: normPath(r.dir) };
+  }
+  if (!gkIde() || gitView !== 'repo') gkSetMode('ide');
+  if (repo !== gitSel?.repo || loc.wt !== (gitSel?.wt || '')) await gkSelect(repo, loc.wt);
+  else await gitLoadDetail();
+  // Repo khác: giờ mới có danh sách worktree của nó.
+  const in2 = pick(gkWtRoots());
+  if (in2 && in2.wt !== (gitSel?.wt || '')) await gkSelect(gitD.id, in2.wt);
+  return !!gitD && gitD.id === repo;
+}
+const rvScrollTo = (rel) => $('exView').querySelector(`.rv-file[data-path="${CSS.escape(rel)}"]`)?.scrollIntoView({ block: 'start' });
+
+// Mở diff WIP của một tệp agent đã sửa (đường dẫn tuyệt đối) thành một tab của IDE. follow = app tự gửi khi
+// agent vừa sửa tệp (Follow): chỉ khi đang ở IDE đúng worktree đó và không gõ ở khung Commit; không đổi repo,
+// không báo lỗi. Tab Review đang mở thì cuộn tới tệp đó thay vì mở tab mới.
+async function mnOpenDiff(p, follow) {
+  if (follow) {
+    const loc = gkWtRoots().filter((w) => gkUnder(p, w.path)).sort((a, b) => b.path.length - a.path.length)[0];
+    const busy = gitView !== 'repo' || !gkIde() || $('exScm').contains(document.activeElement);
+    if (!loc || loc.wt !== (gitSel?.wt || '') || busy) return gkIde() && mnRefreshSoon();
+    await gitLoadDetail();
+  } else if (!(await mnLocate(p))) return toast('This file is not in a repository on this page.');
+  if (!gitD) return;
+  const rel = p.slice(normPath(gkCurRoot()).length + 1), f = gitD.status.files.find((x) => x.path === rel);
+  if (!f) { if (!follow) toast(`No uncommitted changes in ${rel} — it may already be committed.`); return; }
+  if (follow && exActive()?.kind === 'review') { await exLoadReview(true); return rvScrollTo(rel); }
+  exOpenWork(rel, f.xy !== '??' && f.xy !== 'UU' && f.xy[1] === '.', !follow);
+}
+// Nút Review của khung Chat: tab Review của worktree agent đang chạy.
+async function mnOpenReview(cwd) {
+  if (cwd && !(await mnLocate(cwd))) return toast('The agent\'s folder is not in a repository on this page.');
+  if (!cwd && (!gkIde() || gitView !== 'repo')) gkSetMode('ide');
+  exShow(EX_REVIEW);
+}
 if (window.parent !== window) {
   window.addEventListener('message', (e) => {
     if (e.source !== window.parent) return;
@@ -1600,7 +1859,19 @@ if (window.parent !== window) {
       mnEnable();
       MN.agents = m.agents.filter((a) => a && typeof a.cwd === 'string').map((a) => ({ ...a, cwd: normPath(a.cwd) }));
       gkRenderAgents();
-    } else if (m.type === 'menorah:side') { mnEnable(); mnSide(m.tab); }
+      mnLive();
+    } else if (m.type === 'menorah:side') { mnEnable(); mnSide(m.tab); if (gkIde() && m.tab === 'agents') exSide('agents'); }
+    else if (m.type === 'menorah:dock') {
+      MN.dock = typeof m.nodeId === 'string' ? m.nodeId : null;
+      const set = (x) => new Set((Array.isArray(x) ? x : []).filter((p) => typeof p === 'string').map(normPath));
+      const t = set(m.paths), grew = [...t].some((p) => !MN.touched.has(p));
+      MN.touched = t; MN.latest = set(m.latest);
+      gkRenderAgents(); gkRenderRight();
+      if (gkIde()) { exRenderSide(); if (exActive()?.kind === 'review') exRenderMain(true); }
+      if (grew && gkIde()) mnRefreshSoon();
+    } else if (m.type === 'menorah:open-diff' && typeof m.path === 'string') mnOpenDiff(normPath(m.path), !!m.follow);
+    else if (m.type === 'menorah:timeline') tlTake(m);
+    else if (m.type === 'menorah:open-review') mnOpenReview(typeof m.cwd === 'string' ? normPath(m.cwd) : '');
     else if (m.type === 'menorah:repos-changed') {
       // A clone finished in the app: reload the list and show the new repository.
       gitLoadList(true).then(() => {
@@ -1626,7 +1897,9 @@ if (window.parent !== window) {
     const h = e.target.closest('[data-asec]');
     if (h) { const k = h.dataset.asec; gitClosed.has(k) ? gitClosed.delete(k) : gitClosed.add(k); gitSaveUi(); return gkRenderAgents(); }
     const r = e.target.closest('[data-node]');
-    if (r) mnPost({ type: 'menorah:open-node', nodeId: r.dataset.node, projectId: r.dataset.project, canvasId: r.dataset.canvas });
+    if (!r) return;
+    if (e.target.closest('[data-cv]') || r.dataset.agent === 'shell' || !gkIde()) mnPost({ type: 'menorah:open-node', nodeId: r.dataset.node, projectId: r.dataset.project, canvasId: r.dataset.canvas });
+    else mnPost({ type: 'menorah:chat-agent', nodeId: r.dataset.node });
   });
   // Giữ chỗ trống trên thanh công cụ để dời cửa sổ app, như thanh tiêu đề. -webkit-app-region không
   // có tác dụng trong iframe, nên báo app cha từng lần rê; app tự đặt cửa sổ theo con trỏ màn hình.
@@ -1651,6 +1924,9 @@ if (window.parent !== window) {
   }
   $('gkBar').addEventListener('dblclick', (e) => { if (gkFree(e)) mnPost({ type: 'menorah:win-zoom' }); });
   mnPost({ type: 'menorah:ready' });
+  // Khung Chat của IDE (ngoài iframe) kẻ header cao đúng bằng thanh này.
+  let barH = 0;
+  new ResizeObserver(() => { const h = $('gkBar').getBoundingClientRect().height; if (h && h !== barH) mnPost({ type: 'menorah:bar-h', h: barH = h }); }).observe($('gkBar'));
   mnTheme();
 }
 
@@ -1662,8 +1938,9 @@ if (window.parent !== window) {
 // (id ở gitUi.terms), không tự mở shell mới.
 // Nút Terminal = "terminal của chỗ đang xem": chưa có shell → mở; khay đóng → mở; đang ở tab của
 // thư mục này → đóng khay; khác thư mục → chuyển sang tab của thư mục đó, chưa có thì mở mới.
-// vn: bộ gõ tiếng Việt (vnkey.js của app) — app cha gửi phương thức đang dùng ('off' | 'telex' | 'vni').
-const GT = { tabs: [], active: null, lib: null, home: '', vn: { method: 'off', modern: false } };
+// vn / vnTerm: bộ gõ tiếng Việt (vnkey.js của app) cho ô nhập / terminal — app cha gửi phương thức
+// đang dùng ('off' | 'telex' | 'vni'). Terminal focus thì báo app để nó chặn bộ gõ của máy khi cần.
+const GT = { tabs: [], active: null, lib: null, home: '', vn: { method: 'off', modern: false }, vnTerm: { method: 'off', modern: false } };
 const GT_ID = /^gk-term:[\w-]{1,40}$/;
 const GT_ANSI = {
   dark: {
@@ -1706,7 +1983,8 @@ function gtLib() {
     const css = document.createElement('link');
     css.rel = 'stylesheet'; css.href = '/vendor/xterm/css/xterm.css';
     document.head.append(css);
-    const files = ['xterm/lib/xterm.js', 'addon-fit/lib/addon-fit.js', 'addon-unicode11/lib/addon-unicode11.js', 'addon-web-links/lib/addon-web-links.js', 'vnkey/vnkey.js'];
+    const files = ['xterm/lib/xterm.js', 'addon-fit/lib/addon-fit.js', 'addon-unicode11/lib/addon-unicode11.js', 'addon-web-links/lib/addon-web-links.js', 'vnkey/vnkey.js']
+      .filter((f) => !(f.startsWith('vnkey/') && window.VnKey));
     const next = (i) => {
       if (i === files.length) return ok();
       const sc = document.createElement('script');
@@ -1762,7 +2040,7 @@ async function gtAdd(id, cwd, pick = true) {
   try { t.term.loadAddon(new WebLinksAddon.WebLinksAddon((e, url) => window.open(url))); } catch {}
   t.term.onData((data) => { if (t.started) mnPost({ type: 'menorah:term-write', id, data }); });
   t.term.onResize(({ cols, rows }) => { if (t.started) mnPost({ type: 'menorah:term-resize', id, cols, rows }); });
-  if (window.VnKey) VnKey.attach(t.term, { el: t.host, config: () => GT.vn, onToggle: () => mnPost({ type: 'menorah:vnkey-toggle' }), onForeign: () => mnPost({ type: 'menorah:vnkey-foreign' }) });
+  if (window.VnKey) VnKey.attach(t.term, { el: t.host, config: () => GT.vnTerm, onToggle: () => mnPost({ type: 'menorah:vnkey-toggle' }), onForeign: () => mnPost({ type: 'menorah:vnkey-foreign' }) });
   t.term.open(t.host);
   gtFit(t);
   mnPost({ type: 'menorah:term-start', id, cwd, cols: t.term.cols, rows: t.term.rows });
@@ -1814,11 +2092,23 @@ function gtEnable() {
   if (ids.length && !GT.tabs.length) mnPost({ type: 'menorah:term-alive', ids });
 }
 if (window.parent !== window) {
+  // Plugin gõ tiếng Việt của app cũng gõ được trong các ô nhập của trang (commit, mô tả, lọc…).
+  const sc = document.createElement('script');
+  sc.src = '/vendor/vnkey/vnkey.js';
+  sc.onload = () => VnKey.attachFields(document, { config: () => GT.vn, onToggle: () => mnPost({ type: 'menorah:vnkey-toggle' }), onForeign: () => mnPost({ type: 'menorah:vnkey-foreign' }) });
+  document.head.append(sc);
+  const isTerm = (t) => !!t?.classList?.contains('xterm-helper-textarea');
+  document.addEventListener('focusin', (e) => mnPost({ type: 'menorah:vnkey-term-focus', on: isTerm(e.target) }));
+  document.addEventListener('focusout', (e) => { if (!e.relatedTarget) mnPost({ type: 'menorah:vnkey-term-focus', on: false }); });
   window.addEventListener('message', (e) => {
     if (e.source !== window.parent) return;
     const m = e.data || {};
     if (m.type === 'menorah:term-alive') return gtRestore(Array.isArray(m.alive) ? m.alive : []);
-    if (m.type === 'menorah:vnkey') { GT.vn = { method: String(m.method), modern: !!m.modern }; return; }
+    if (m.type === 'menorah:vnkey') {
+      GT.vn = { method: String(m.method), modern: !!m.modern };
+      GT.vnTerm = m.term ? { method: String(m.term.method), modern: !!m.term.modern } : GT.vn;
+      return;
+    }
     const t = GT.tabs.find((x) => x.id === m.id);
     if (!t || !t.term) return;
     if (m.type === 'menorah:term-started') {
@@ -1854,7 +2144,7 @@ const gkViewSeg = () => (gitUi.view === 'tree' ? '<button class="link gk-fold" d
 // files: [{ path, st, from? }]; ctx: { staged, sha, empty, lock }
 function gkFiles(files, ctx) {
   if (!files.length) return `<div class="gd-empty">${esc(ctx.empty || 'No files.')}</div>`;
-  const o = gitDiffOpen;
+  const tw = gkIde() && exActive(), o = gkIde() ? (tw?.kind === 'work' ? { path: tw.path, staged: tw.staged, sha: null } : null) : gitDiffOpen;
   const isSel = (p) => o && o.path === p && (ctx.sha ? o.sha === ctx.sha : !o.sha && !!o.staged === !!ctx.staged);
   const act = ctx.sha ? '' : ctx.staged ? 'unstage' : 'stage';
   const btn = (label) => (act ? `<button class="act" data-act="${act}" ${ctx.lock || ''}>${label}</button>` : '');
@@ -1863,7 +2153,7 @@ function gkFiles(files, ctx) {
   const ST_TITLE = { M: 'modified', A: 'added', D: 'deleted', R: 'renamed', C: 'copied', U: 'conflicted', T: 'type changed' };
   const fileRow = (f, depth, name) => `<div class="gk-file ${isSel(f.path) ? 'sel' : ''}" data-path="${esc(f.path)}" data-staged="${ctx.staged ? 1 : 0}" data-st="${esc(f.st)}"
     ${ctx.sha ? `data-sha="${ctx.sha}"` : ''} style="padding-left:${14 + depth * 14}px" title="${esc(f.from ? `${f.from} → ${f.path}` : f.path)}">
-    <span class="st ${f.st}" title="${ST_TITLE[f.st] || ''}">${f.st}</span><span class="p">${name}</span>${f.secret
+    <span class="st ${f.st}" title="${ST_TITLE[f.st] || ''}">${f.st}</span><span class="p">${name}</span>${!ctx.sha && gkTouched(f.path) ? `<span class="ai" title="Edited by the agent in the chat panel">${ic('sparkles')}</span>` : ''}${f.secret
       ? '<span class="chip warn" title="Untracked secret file — add it to .gitignore. This page will not stage it.">secret</span>'
       : drop(f) + btn(f.st === 'U' ? 'Mark resolved' : ctx.staged ? 'Unstage' : 'Stage')}</div>`;
   if (gitUi.view !== 'tree') {
@@ -2047,7 +2337,7 @@ async function gkIdentityDialog() {
       <div class="row"><span class="lbl">Use for</span><div class="seg" id="idScope">
         <button data-scope="repo" class="${f.scope === 'repo' ? 'active' : ''}">This repository</button><button data-scope="global" class="${f.scope === 'global' ? 'active' : ''}">All repositories</button></div></div>
       <div class="row"><span class="lbl">Name</span><input type="text" id="idName" maxlength="100" placeholder="Your Name" autocomplete="name" spellcheck="false" value="${esc(id.name || '')}" /></div>
-      <div class="row"><span class="lbl">Email</span><input type="text" id="idEmail" maxlength="200" placeholder="you@example.com" autocomplete="email" spellcheck="false" value="${esc(id.email || '')}" /></div>
+      <div class="row"><span class="lbl">Email</span><input type="text" id="idEmail" data-novn maxlength="200" placeholder="you@example.com" autocomplete="email" spellcheck="false" value="${esc(id.email || '')}" /></div>
       <div class="gd-check"><span id="idNote"></span></div>
       <div class="gd-check"><span>Only new commits use it — commits already made keep their author.</span></div></div>`,
     mount: (root, okB) => {
@@ -2106,7 +2396,9 @@ function gkCommit() {
 }
 
 // ── Diff ──
-function gkOpenDiff(o) { gitDiffOpen = o; gkRenderDiff(); gkRenderRight(); gkLoadDiff(); }
+function gkOpenDiff(o) {
+  if (gkIde() && !o.sha) return exOpenWork(o.path, !!o.staged);
+  gitDiffOpen = o; gkRenderDiff(); gkRenderRight(); gkLoadDiff(); }
 function gkCloseDiff() { gitDiffOpen = null; gkRenderDiff(); gkRenderRight(); }
 
 // Sau stage/bỏ stage hay đọc lại trạng thái: diff đang mở đi theo tệp sang danh sách kia.
@@ -2142,12 +2434,13 @@ async function gkLoadDiff(quiet = false) {
 
 function gkDiffHtml(text) {
   const out = [];
-  let o = 0, n = 0, inHunk = false;
-  const line = (cls, a, b, t) => `<div class="dl ${cls}"><span class="n">${a}</span><span class="n">${b}</span><span class="t">${esc(t)}</span></div>`;
+  let o = 0, n = 0, inHunk = false, blank = false;
+  const line = (cls, a, b, t) => `<div class="dl ${cls}"><span class="n">${blank ? '' : a}</span><span class="n">${blank ? '' : b}</span><span class="t">${esc(t)}</span></div>`;
   for (const ln of text.split('\n')) {
     if (ln.startsWith('diff --git ')) { inHunk = false; continue; }
     const m = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(ln);
-    if (m) { o = +m[1]; n = +m[2]; inHunk = true; out.push(line('hunk', '', '', ln)); continue; }
+    // @@ -0 +0 @@ = hunk dựng từ lệnh Edit của agent, không biết số dòng (dòng thời gian Review).
+    if (m) { o = +m[1]; n = +m[2]; inHunk = true; blank = !o && !n; out.push(line('hunk', '', '', blank ? '⋯' : ln)); continue; }
     if (!inHunk) {
       if (ln && !/^(index |--- |\+\+\+ )/.test(ln)) out.push(line('meta', '', '', ln));   // tệp mới, đổi tên, nhị phân…
       continue;
@@ -2203,7 +2496,7 @@ function gkRenderDiff() {
   if (!asWeb) el.querySelector('.gk-diff-b').scrollTop = top;
 }
 
-function gkRenderAll() { gkRenderBar(); gkRenderSide(); gkRenderGraph(); gkRenderRight(); gkRenderDiff(); }
+function gkRenderAll() { gkRenderBar(); gkRenderSide(); gkRenderGraph(); gkRenderRight(); gkRenderDiff(); exRenderAct(); }
 
 // ── Chế độ Files: cây tệp kiểu VS Code + lịch sử từng tệp ──
 // Nút Graph | Files ở góc phải thanh Command history (gitUi.mode). Cây lấy từ /api/git/files (tệp git
@@ -2218,23 +2511,67 @@ const exCmp = (a, b) => a.localeCompare(b, 'en', { numeric: true, sensitivity: '
 // Chữ cái như VS Code: M sửa, U mới (chưa theo dõi), A đã thêm, D đã xoá, R đổi tên, C xung đột.
 const exMark = (xy) => !xy ? '' : xy === '??' ? 'U' : xy === 'UU' || xy.includes('U') ? 'C' : xy.includes('D') ? 'D' : xy.includes('A') ? 'A' : xy.includes('R') ? 'R' : 'M';
 const exRoot = () => gitD ? normPath(gitSel.wt ? join2(gitD.mainPath, gitSel.wt) : gitD.mainPath) : '';
-const exActive = () => EX.tabs.find((t) => t.id === EX.active) || null;
+// Tab Review chỉ có ở IDE, luôn đứng đầu, không đóng được.
+const EX_REVIEW = { id: 'review', kind: 'review', path: '' };
+const exTabsAll = () => (gkIde() ? [EX_REVIEW, ...EX.tabs] : EX.tabs);
+const exActive = () => exTabsAll().find((t) => t.id === EX.active) || null;
 const exFileOf = (t) => t && (t.kind === 'file' ? t.path : t.file);
 
 function gkModeSw() {
-  return `<div class="seg sm gk-mode">${[['graph', 'Graph', 'Commit graph of the repository'], ['files', 'Files', 'Project structure and file history']].map(([k, l, tt]) =>
+  const ms = [['graph', 'Graph', 'Commit graph of the repository'], ['files', 'Files', 'Project structure and file history'],
+    MN.on && ['ide', 'IDE', 'Chat with an agent and watch the files it changes']].filter(Boolean);
+  return `<div class="seg sm gk-mode">${ms.map(([k, l, tt]) =>
     `<button data-mode="${k}" class="${gitUi.mode === k ? 'active' : ''}" title="${tt}">${ic(k)}${l}</button>`).join('')}</div>`;
 }
 function gkSetMode(m) {
-  gitUi.mode = m === 'files' ? 'files' : 'graph';
+  gitUi.mode = m === 'files' || m === 'ide' ? m : 'graph';
   gitSaveUi();
   if (gitView === 'projects') gkSetView('repo');
   gkApplyMode();
   gitRenderHistory();
 }
+// IDE chỉ có khi chạy trong GitMenorah (cần khung Chat của app); ngoài đó coi như Graph.
+const gkIde = () => gitUi.mode === 'ide' && MN.on;
+const exOn = () => gitUi.mode === 'files' || gkIde();
 function gkApplyMode() {
+  const ide = gkIde(), was = $('panelGit').classList.contains('ide');
   $('panelGit').classList.toggle('files', gitUi.mode === 'files');
-  if (gitUi.mode === 'files') exLoad();
+  $('panelGit').classList.toggle('ide', ide);
+  mnMode();
+  if (ide !== was) {
+    // IDE: cột WIP + Commit và danh sách agent của Graph sang cột trái (Changes, Agents); về Graph thì trả về chỗ cũ.
+    if (ide) {
+      $('exScm').append($('gkRight')); $('exAg').append($('gkAgents'));
+      $('gkAgents').hidden = false;
+      gitDiffOpen = null; gitPick = 'wip';
+      if (!exActive()) EX.active = 'review';
+    } else {
+      $('gkMain').after($('gkRight')); $('gkTree').after($('gkAgents'));
+      if (gitPick === 'wip' && !gitD?.status.files?.length) gitPick = null;
+      if (EX.active === 'review') EX.active = EX.tabs[0]?.id || '';
+      mnSide(MN.tab);
+    }
+    exRenderAct();
+    if (gitSel && gitView === 'repo') { gitSig = ''; gitLoadDetail(); } else gkRenderAll();
+    if (EX.key) exRenderAll();
+  }
+  if (exOn()) exLoad();
+}
+
+// Thanh hoạt động của IDE (như Cursor): Explorer · Changes (WIP + Commit) · Agents.
+function exRenderAct() {
+  if (!gkIde()) return;
+  const side = ['files', 'scm', 'agents'].includes(gitUi.ideSide) ? gitUi.ideSide : 'files';
+  document.querySelector('.ex-side').dataset.ide = side;
+  const n = gitD?.status.filesTotal || 0, ag = $('gkAgN');
+  const b = (k, icon, tt, badge, cls = '') => `<button data-iside="${k}" class="${side === k ? 'on' : ''}" title="${tt}">${ic(icon)}${badge ? `<span class="n${cls}">${badge}</span>` : ''}</button>`;
+  $('exAct').innerHTML = b('files', 'files', 'Explorer (⌘P to go to a file)') + b('scm', 'branch', 'Changes — stage and commit', n)
+    + b('agents', 'sparkles', 'Agents in this repository — click one to chat with it', ag.textContent, ag.classList.contains('run') ? ' run' : '');
+}
+function exSide(k) {
+  gitUi.ideSide = k; gitSaveUi();
+  exRenderAct();
+  if (k === 'agents') gkRenderAgents();
 }
 
 // Thư mục đang mở và tab đang mở nhớ theo repo|worktree.
@@ -2248,7 +2585,7 @@ function exSave() {
 }
 
 async function exLoad() {
-  if (gitUi.mode !== 'files' || gitView !== 'repo') return;
+  if (!exOn() || gitView !== 'repo') return;
   if (!gitSel) { EX.key = ''; EX.files = null; EX.err = 'Pick a repository first.'; return exRenderAll(); }
   const key = `${gitSel.repo}|${gitSel.wt || ''}`;
   if (key !== EX.key) {
@@ -2258,6 +2595,8 @@ async function exLoad() {
     EX.tabs = (st.tabs || []).map((p) => ({ id: 'f:' + p, kind: 'file', path: p }));
     if (st.active && !EX.tabs.some((t) => t.path === st.active)) EX.tabs.push({ id: 'f:' + st.active, kind: 'file', path: st.active, preview: true });
     EX.active = st.active ? 'f:' + st.active : '';
+    if (gkIde() && !exActive()) EX.active = 'review';
+    REV.data.clear(); REV.html = '';
     $('exFilter').value = '';
     exRenderAll();
   }
@@ -2280,7 +2619,24 @@ async function exLoad() {
     for (const x of EX.tabs) if (x.kind === 'file' || x.kind === 'work') { x.data = null; x.err = null; }
     if (t) exLoadTab(t, true);
     exLoadLog(true);
-  }
+  } else if (gkIde()) exRefresh(t);
+}
+
+// IDE: agent sửa tiếp một tệp đã sửa thì trạng thái git không đổi mà nội dung đổi — đọc lại tab đang xem.
+async function exRefresh(t) {
+  if (!t) return;
+  if (t.kind === 'review') return exLoadReview(true);
+  if (t.kind === 'diff' || t.busy || !t.data) return;
+  const q = exQ();
+  q.set('path', t.path);
+  if (t.kind === 'work') q.set('staged', t.staged ? '1' : '0');
+  t.busy = true;
+  let r = null;
+  try { r = await api((t.kind === 'file' ? '/api/git/file?' : '/api/git/diff?') + q); } catch {}
+  t.busy = false;
+  if (!r || JSON.stringify(r) === JSON.stringify(t.data)) return;
+  t.data = r;
+  if (t.id === EX.active) exRenderMain(true);
 }
 
 function exBuild(files) {
@@ -2322,11 +2678,12 @@ function exRenderSide() {
   if (!EX.tree) { el.innerHTML = '<div class="ex-note">Loading files…</div>'; return; }
   const q = $('exFilter').value.trim().toLowerCase();
   const cur = exFileOf(exActive());
+  const ai = (p) => (gkTouched(p) ? `<span class="ai" title="Edited by the agent in the chat panel">${ic('sparkles')}</span>` : '');
   const pad = (d) => `style="padding-left:${10 + d * 14}px"`;
   const fileRow = (p, d, withDir) => {
     const m = exMark(EX.xy[p]);
     return `<div class="ex-it${m ? ' ex-' + m : ''}${p === cur ? ' on' : ''}" data-file="${esc(p)}" ${pad(d)} title="${esc(p)}">
-      <span style="width:12px;flex:none"></span>${ic('file')}<span class="nm">${esc(exName(p))}</span>${withDir && exDir(p) ? `<span class="dir">${esc(exDir(p))}</span>` : ''}${m ? `<span class="mk">${m}</span>` : ''}</div>`;
+      <span style="width:12px;flex:none"></span>${ic('file')}<span class="nm">${esc(exName(p))}</span>${withDir && exDir(p) ? `<span class="dir">${esc(exDir(p))}</span>` : ''}${ai(p)}${m ? `<span class="mk">${m}</span>` : ''}</div>`;
   };
   const out = [];
   if (q) {
@@ -2374,24 +2731,70 @@ function exShow(t) {
   if (prev && prev !== t) prev.top = $('exView').scrollTop;
   EX.active = t.id;
   exRenderSide(); exRenderMain();
+  if (gkIde()) gkRenderRight();
   exLoadTab(t);
   if (exFileOf(t) !== EX.logFor) exLoadLog(); else exRenderLog();
   $('exTree').querySelector('.ex-it.on')?.scrollIntoView({ block: 'nearest' });
 }
-function exClose(id) {
-  const i = EX.tabs.findIndex((x) => x.id === id);
-  if (i < 0) return;
-  EX.tabs.splice(i, 1);
-  if (EX.active === id) {
-    const nx = EX.tabs[Math.min(i, EX.tabs.length - 1)];
+// Đóng một hoặc nhiều tab (menu chuột phải: Close others / to the right / saved / all). Tab chưa lưu hỏi một lần.
+async function exClose(ids) {
+  ids = [].concat(ids);
+  let ts = EX.tabs.filter((x) => ids.includes(x.id));
+  if (!ts.length) return;
+  const dirty = ts.filter(edDirty);
+  if (dirty.length) {
+    const t = dirty[0], ok = await gitDialog(dirty.length === 1
+      ? { title: `Close ${exName(t.path)}?`, html: `<p>Your changes to <code>${esc(t.path)}</code> are not saved. Closing the tab throws them away.</p>`, ok: 'Close without saving', okClass: 'danger' }
+      : { title: `Close ${dirty.length} unsaved files?`, html: `<p>These files have changes that are not saved. Closing the tabs throws them away.</p><p>${dirty.map((x) => `<code>${esc(x.path)}</code>`).join('<br>')}</p>`, ok: 'Close without saving', okClass: 'danger' });
+    if (!ok) return;
+    dirty.forEach(edDrop);
+  }
+  ts = ts.filter((x) => EX.tabs.includes(x));
+  if (!ts.length) return;
+  const a = EX.tabs.findIndex((x) => x.id === EX.active), gone = ts.some((x) => x.id === EX.active);
+  const i = a - EX.tabs.slice(0, a).filter((x) => ts.includes(x)).length;
+  for (const x of ts) EX.tabs.splice(EX.tabs.indexOf(x), 1);
+  if (gone) {
+    const nx = EX.tabs[Math.min(i, EX.tabs.length - 1)] || (gkIde() ? EX_REVIEW : null);
     if (nx) return exShow(nx), exSave();
     EX.active = '';
     exRenderSide(); exRenderMain(); exLoadLog();
   } else exRenderMain();
   exSave();
 }
+function exTabMenu(e, id) {
+  const all = exTabsAll(), k = all.findIndex((x) => x.id === id), t = all[k];
+  if (!t) return;
+  const others = EX.tabs.filter((x) => x !== t).map((x) => x.id), right = all.slice(k + 1).filter((x) => x.kind !== 'review').map((x) => x.id);
+  const saved = EX.tabs.filter((x) => !edDirty(x)).map((x) => x.id), root = exRoot(), f = exFileOf(t);
+  const reveal = () => {
+    for (let d = exDir(f); d; d = exDir(d)) EX.open.add(d);
+    if (gkIde()) exSide('files');
+    if (t.id !== EX.active) exShow(t); else exRenderSide();
+    exSave();
+    $('exTree').querySelector(`[data-file="${CSS.escape(f)}"]`)?.scrollIntoView({ block: 'nearest' });
+  };
+  gitMenu(e, [{ hd: t.kind === 'review' ? 'Review' : t.path },
+    t.kind !== 'review' && { label: 'Close', act: () => exClose(t.id) },
+    { label: 'Close others', disabled: !others.length, act: () => exClose(others) },
+    { label: 'Close to the right', disabled: !right.length, act: () => exClose(right) },
+    gkIde() && { label: 'Close saved', disabled: !saved.length, act: () => exClose(saved) },
+    { label: 'Close all', disabled: !EX.tabs.length, act: () => exClose(EX.tabs.map((x) => x.id)) },
+    '-',
+    t.preview && { label: 'Keep open', act: () => { t.preview = false; exRenderMain(true); exSave(); } },
+    edDirty(t) && { label: 'Save', sub: '⌘S', disabled: !!gitD?.readOnly, act: () => edSave(t) },
+    edDirty(t) && { label: 'Revert', danger: true, act: () => edRevert(t) },
+    '-',
+    t.kind === 'diff' && { label: 'Copy commit SHA', act: () => copy(t.sha, 'Commit SHA copied') },
+    f && root && { label: 'Copy path', act: () => copy(join2(root, f), 'Path copied') },
+    f && { label: 'Copy relative path', act: () => copy(f, 'Path copied') },
+    f && { label: 'Reveal in explorer', act: reveal },
+    f && MN.on && root && { label: 'Open terminal here', sub: exDir(f) || 'repository root', act: () => exTerminal(exDir(f) ? join2(root, exDir(f)) : root) },
+  ]);
+}
 
 async function exLoadTab(t, quiet) {
+  if (t.kind === 'review') return exLoadReview(quiet);
   if (t.data || t.busy) return;
   t.busy = true;
   const q = exQ();
@@ -2401,6 +2804,546 @@ async function exLoadTab(t, quiet) {
   try { t.data = await api((t.kind === 'file' ? '/api/git/file?' : '/api/git/diff?') + q); t.err = null; } catch (e) { if (!quiet) t.err = e.message; }
   t.busy = false;
   if (EX.tabs.includes(t) && t.id === EX.active) exRenderMain(quiet);
+}
+
+// Diff WIP của một tệp thành tab (chế độ IDE). Cùng tệp mà đổi giữa staged / unstaged thì đọc lại.
+function exOpenWork(p, staged, pin) {
+  const id = 'w:' + p, cur = EX.tabs.find((x) => x.id === id);
+  if (cur && !!cur.staged !== !!staged) { cur.staged = staged; cur.data = null; cur.err = null; }
+  exOpen({ id, kind: 'work', path: p, file: p, staged }, pin);
+}
+
+// ── Trình soạn tệp của IDE: Monaco (gói monaco-editor, git-server phục vụ ở /vendor/monaco/). Mỗi tệp một
+// model theo đường dẫn tuyệt đối, nên sửa dở vẫn còn khi đổi tab, đổi worktree hay về Graph rồi quay lại.
+// ED.meta[uri]: saved = phiên bản model lúc khớp đĩa, hash = hash nội dung đĩa lúc đó (gửi kèm khi lưu để
+// không đè lên tệp agent vừa sửa), disk = nội dung đĩa mới khi đang có sửa chưa lưu (xung đột).
+const ED = { mon: null, boot: null, ed: null, host: null, cur: null, meta: new Map(), fail: null };
+const edUri = (t) => `${gkCurRoot()}/${t.path}`;
+const edModel = (t) => ED.mon?.editor.getModel(ED.mon.Uri.file(edUri(t))) || null;
+function edDirty(t) {
+  if (!ED.mon || t?.kind !== 'file') return false;
+  const m = edModel(t), x = m && ED.meta.get(edUri(t));
+  return !!x && m.getAlternativeVersionId() !== x.saved;
+}
+const edCan = (t) => gkIde() && t?.kind === 'file' && !t.err && !!t.data && !t.data.secret && !t.data.missing && !t.data.binary
+  && !t.data.cut && !(EX_MD.test(t.path) && gitUi.mdView !== 'code') && !ED.fail;
+function edBoot() {
+  if (ED.boot) return ED.boot;
+  ED.boot = new Promise((ok, fail) => {
+    const sc = document.createElement('script');
+    sc.src = '/vendor/monaco/vs/loader.js';
+    sc.onerror = () => fail(new Error('This build has no code editor (monaco-editor) — rebuild GitMenorah (tools/build-git.sh).'));
+    sc.onload = () => {
+      // Loader AMD của Monaco để lại define toàn cục: xterm, vnkey (UMD) thấy define.amd sẽ thành module AMD
+      // thay vì gắn vào window. Monaco tự gọi define, không xét cờ này.
+      delete window.define.amd;
+      window.require.config({ paths: { vs: '/vendor/monaco/vs' } });
+      window.require(['vs/editor/editor.main'], () => { delete window.define.amd; ok(window.monaco); }, fail);   // editor.main đặt lại cờ
+    };
+    document.head.append(sc);
+  }).then((mon) => {
+    ED.mon = mon;
+    // Màu thanh cuộn khớp --scroll / --scroll-hover / --scroll-active của trang
+    const bar = (c, a) => ({ 'scrollbar.shadow': '#00000000', 'scrollbarSlider.background': c + a[0], 'scrollbarSlider.hoverBackground': c + a[1],
+      'scrollbarSlider.activeBackground': c + a[2], 'minimapSlider.background': c + a[0], 'minimapSlider.hoverBackground': c + a[1],
+      'minimapSlider.activeBackground': c + a[2] });
+    const dark = { base: 'vs-dark', inherit: true, rules: [], colors: { 'editor.background': '#11151c', ...bar('#ffffff', ['24', '42', '61']) } };
+    mon.editor.defineTheme('gk-dark', dark);
+    mon.editor.defineTheme('gk-light', { base: 'vs', inherit: true, rules: [], colors: bar('#101828', ['33', '5c', '80']) });
+    ED.host = document.createElement('div');
+    ED.host.className = 'ed-host';
+    ED.host.dataset.novn = '';   // bộ gõ tiếng Việt dựng sẵn sửa thẳng ô nhập — không dùng với Monaco
+    ED.ed = mon.editor.create(ED.host, {
+      automaticLayout: true, fontFamily: getComputedStyle(document.documentElement).getPropertyValue('--mono').trim() || 'monospace',
+      fontSize: 12.5, minimap: { enabled: true, renderCharacters: false }, scrollBeyondLastLine: false, renderWhitespace: 'selection',
+      smoothScrolling: true, fixedOverflowWidgets: true, theme: edThemeName(), overviewRulerBorder: false, hideCursorInOverviewRuler: true,
+      scrollbar: { useShadows: false, verticalScrollbarSize: 10, horizontalScrollbarSize: 10, verticalSliderSize: 6, horizontalSliderSize: 6 },
+    });
+    ED.ed.addCommand(mon.KeyMod.CtrlCmd | mon.KeyCode.KeyS, () => { const t = exActive(); if (t?.kind === 'file') edSave(t); });
+    ED.ed.onDidChangeModelContent(() => edPaint());
+    return mon;
+  }, (e) => { ED.fail = e.message || String(e); throw e; });
+  return ED.boot;
+}
+const edThemeName = () => (document.documentElement.dataset.theme === 'dark' ? 'gk-dark' : 'gk-light');
+function edTheme() { try { ED.mon?.editor.setTheme(edThemeName()); } catch {} }   // gọi được cả trước khi ED khai báo
+
+// Khớp model với nội dung đĩa mới đọc (t.data): chưa sửa gì thì lấy luôn bản đĩa (vẫn undo được),
+// đang sửa dở thì giữ bản của người dùng và báo xung đột.
+function edSync(t) {
+  const mon = ED.mon, uri = edUri(t), r = t.data;
+  let m = edModel(t), x = ED.meta.get(uri);
+  if (!m) {
+    m = mon.editor.createModel(r.text, undefined, mon.Uri.file(uri));
+    ED.meta.set(uri, x = { saved: m.getAlternativeVersionId(), hash: r.hash, disk: null });
+    return m;
+  }
+  if (!x) ED.meta.set(uri, x = { saved: m.getAlternativeVersionId(), hash: r.hash, disk: null });
+  if (r.hash === x.hash) { x.disk = null; return m; }
+  if (m.getAlternativeVersionId() === x.saved || m.getValue() === r.text) edPut(m, x, r);
+  else x.disk = { text: r.text, hash: r.hash };
+  return m;
+}
+function edPut(m, x, r) {
+  if (m.getValue() !== r.text) m.pushEditOperations([], [{ range: m.getFullModelRange(), text: r.text }], () => null);
+  x.saved = m.getAlternativeVersionId(); x.hash = r.hash; x.disk = null;
+}
+
+function edBar(t) {
+  const dirty = edDirty(t), x = ED.meta.get(edUri(t)), ro = gitD?.readOnly;
+  const crumb = t.path.split('/').map((p) => `<span>${esc(p)}</span>`).join('<i>›</i>');
+  const md = EX_MD.test(t.path) ? `<div class="seg sm"><button data-exmd="preview" title="Render the Markdown">Preview</button><button data-exmd="code" class="active" title="Edit the source">Code</button></div>` : '';
+  const web = /\.html?$/i.test(t.path) ? `<button data-ex="web" title="Open the page in a new window">Open as web page</button>` : '';
+  return {
+    bar: `<span class="p">${crumb}</span>${dirty ? '<span class="chip unsaved">unsaved</span>' : ''}<span class="meta">${ro ? 'read-only clone' : exKb(t.data.size)}</span>${md}${web}
+      <button data-ex="copy" title="Copy the full path">Copy path</button>${dirty ? '<button data-ex="edrevert" title="Throw away your edits and go back to the file on disk">Revert</button>' : ''}
+      <button class="primary" data-ex="save" ${dirty && !ro ? '' : 'disabled'} title="${ro ? esc(ro) : 'Save (⌘S)'}">Save</button>`,
+    warn: x?.disk ? `<div class="ed-warn">${ic('sparkles')}<span>The file changed on disk while you were editing — probably the agent. Save is paused so neither change is lost.</span>
+      <button data-ex="edreload" title="Throw away your edits and load the version on disk">Load disk version</button><button class="danger" data-ex="edforce" title="Replace the version on disk with yours">Overwrite with mine</button></div>` : '',
+  };
+}
+// Vẽ lại thanh trên + chấm "chưa lưu" ở tab — mỗi lần gõ, không dựng lại cả khung.
+function edPaint() {
+  const t = exActive(), view = $('exView');
+  if (!t || view.dataset.ed !== t.id) return;
+  const { bar, warn } = edBar(t), c = view.querySelector('.ex-crumb'), w = view.querySelector('.ed-warn-slot');
+  if (c.dataset.sig !== bar) { c.innerHTML = bar; c.dataset.sig = bar; }
+  if (w.dataset.sig !== warn) { w.innerHTML = warn; w.dataset.sig = warn; }
+  $('exTabs').querySelector(`.ex-tab[data-tab="${CSS.escape(t.id)}"]`)?.classList.toggle('dirty', edDirty(t));
+}
+function edRender(view, t) {
+  if (!ED.mon) {
+    view.className = 'ex-main-v'; delete view.dataset.ed;
+    view.style.cssText = 'display:flex;flex-direction:column;flex:1;min-height:0';
+    view.innerHTML = `<div class="ex-crumb"><span class="p">${esc(t.path)}</span></div><div class="ex-body ed"><div class="msg">Loading the editor…</div></div>`;
+    edBoot().then(() => exRenderMain(true), (e) => { toast(e.message); exRenderMain(true); });
+    return;
+  }
+  const m = edSync(t);
+  if (view.dataset.ed !== t.id || !view.contains(ED.host)) {
+    view.className = 'ex-main-v'; view.dataset.ed = t.id;
+    view.style.cssText = 'display:flex;flex-direction:column;flex:1;min-height:0';
+    view.innerHTML = '<div class="ex-crumb"></div><div class="ed-warn-slot"></div><div class="ex-body ed"></div>';
+    view.querySelector('.ex-body').append(ED.host);
+  }
+  if (ED.ed.getModel() !== m) {
+    if (ED.cur && ED.ed.getModel()) ED.cur.vs = ED.ed.saveViewState();
+    ED.ed.setModel(m);
+    if (t.vs) ED.ed.restoreViewState(t.vs);
+    ED.cur = t;
+  }
+  ED.ed.updateOptions({ readOnly: !!gitD?.readOnly });
+  edPaint();
+}
+
+async function edSave(t, force) {
+  const m = edModel(t), x = m && ED.meta.get(edUri(t));
+  if (!m || !x || gitD?.readOnly) return;
+  if (!force && x.disk) return toast('The file changed on disk — load the disk version or overwrite it first.');
+  if (!force && !edDirty(t)) return;
+  const text = m.getValue(), v = m.getAlternativeVersionId();
+  let r;
+  try { r = await api('/api/git/save', { repo: gitSel.repo, wt: gitSel.wt || '', path: t.path, text, base: x.hash, force: !!force }); } catch (e) { return toast(e.message); }
+  if (r.conflict) { x.disk = { text: r.text, hash: r.hash }; edPaint(); return toast(`${exName(t.path)} changed on disk — nothing was saved.`); }
+  x.saved = v; x.hash = r.hash; x.disk = null;
+  t.data = { ...t.data, text, hash: r.hash, size: r.size };
+  edPaint();
+  gitSig = ''; gitLoadDetail();
+}
+function edReload(t) {
+  const m = edModel(t), x = m && ED.meta.get(edUri(t));
+  if (!x?.disk) return;
+  t.data = { ...t.data, text: x.disk.text, hash: x.disk.hash };
+  edPut(m, x, x.disk);
+  edPaint();
+}
+async function edRevert(t) {
+  const m = edModel(t), x = m && ED.meta.get(edUri(t));
+  if (!x || !(await gitDialog({ title: `Revert ${exName(t.path)}?`, html: `<p>Throw away your unsaved edits to <code>${esc(t.path)}</code> and go back to the file on disk?</p>`, ok: 'Revert', okClass: 'danger' }))) return;
+  edPut(m, x, x.disk || t.data);
+  if (x.disk) t.data = { ...t.data, ...x.disk };
+  edPaint();
+}
+// Đóng tab đang sửa dở: bỏ model để lần mở sau đọc lại từ đĩa.
+function edDrop(t) {
+  const m = edModel(t);
+  ED.meta.delete(edUri(t));
+  if (ED.ed?.getModel() === m) { ED.ed.setModel(null); ED.cur = null; }
+  m?.dispose();
+}
+
+// ── Review (chế độ IDE): mọi thay đổi chưa commit xếp chồng như Cursor. All changes, hay Latest = các tệp
+// lượt gần nhất của agent ở khung Chat đã sửa. Đọc lại theo nhịp poll để thấy agent đang sửa.
+const REV = { scope: 'all', data: new Map(), shut: new Set(), seq: 0, html: '' };
+const REV_MAX = 60;
+const rvKey = (x) => `${x.staged ? 1 : 0}:${x.path}`;
+function rvEntries() {
+  const all = [];
+  for (const f of gitD?.status.files || []) {
+    if (f.xy === '??' || f.xy === 'UU') all.push({ path: f.path, staged: false, st: f.xy === '??' ? 'A' : 'U', secret: !!f.secret });
+    else {
+      if (f.xy[1] !== '.') all.push({ path: f.path, staged: false, st: f.xy[1] });
+      if (f.xy[0] !== '.') all.push({ path: f.path, staged: true, st: f.xy[0] });
+    }
+  }
+  const r = gkCurRoot(), latest = all.filter((x) => MN.latest.has(r + '/' + x.path));
+  const scope = REV.scope === 'latest' && MN.dock ? 'latest' : 'all';
+  return { all, latest, scope, list: scope === 'latest' ? latest : all };
+}
+async function exLoadReview(quiet) {
+  tlLoad();
+  const seq = ++REV.seq, key = EX.key, todo = rvEntries().list.slice(0, REV_MAX).filter((x) => !x.secret);
+  if (!quiet && exActive()?.kind === 'review') exRenderMain(true);
+  let i = 0;
+  const next = async () => {
+    while (i < todo.length) {
+      const x = todo[i++], q = exQ();
+      q.set('path', x.path); q.set('staged', x.staged ? '1' : '0');
+      let r;
+      try { r = await api('/api/git/diff?' + q); } catch (e) { r = { err: e.message }; }
+      if (seq !== REV.seq || key !== EX.key) return;
+      REV.data.set(rvKey(x), r);
+    }
+  };
+  await Promise.all(Array.from({ length: 6 }, next));
+  if (seq === REV.seq && key === EX.key && exActive()?.kind === 'review') exRenderMain(true);
+}
+function exRenderReview(view) {
+  const { all, latest, scope, list } = rvEntries(), lock = gitBusy || gitD?.readOnly ? 'disabled' : '';
+  const count = (t) => {
+    let a = 0, d = 0;
+    for (const l of (t || '').split('\n')) { if (l[0] === '+' && !l.startsWith('+++')) a++; else if (l[0] === '-' && !l.startsWith('---')) d++; }
+    return [a, d];
+  };
+  let A = 0, D = 0;
+  const by = tlByPath();
+  const cards = list.slice(0, REV_MAX).map((x) => {
+    const k = rvKey(x), r = REV.data.get(k), [a, d] = count(r?.text), shut = REV.shut.has(k), i = x.path.lastIndexOf('/');
+    A += a; D += d;
+    const body = x.secret || r?.secret ? '<div class="msg secret">Secret file (.env, key, certificate…) — contents are not shown here.</div>'
+      : r?.err ? `<div class="msg">${esc(r.err)}</div>` : !r ? '<div class="msg">Loading…</div>'
+      : !r.text.trim() ? '<div class="msg">No content changes (possibly a file mode change only).</div>'
+      : gkDiffHtml(r.text) + (r.cut ? '<div class="gk-diff-cut">Diff too large — showing the first 400 KB.</div>' : '');
+    const acts = x.staged ? `<button data-rvact="unstage" ${lock}>Unstage</button>`
+      : (x.st === 'U' || x.secret ? '' : `<button class="danger" data-rvact="discard" ${lock} title="Throw away the unstaged changes in this file">Discard</button>`)
+        + (x.secret ? '' : `<button data-rvact="stage" ${lock}>${x.st === 'U' ? 'Mark resolved' : 'Stage'}</button>`);
+    return `<div class="rv-file${shut ? ' shut' : ''}" data-rv="${esc(k)}" data-path="${esc(x.path)}" data-staged="${x.staged ? 1 : 0}">
+      <div class="rv-h" title="Click to fold">${ic('down', 'gk-tw' + (shut ? ' shut' : ''))}<span class="st ${esc(x.st)}">${esc(x.st)}</span>
+        <span class="p" data-rvopen title="Open ${esc(x.path)} in a tab">${i >= 0 ? `<span class="d">${esc(x.path.slice(0, i + 1))}</span>` : ''}${esc(x.path.slice(i + 1))}</span>${
+        gkTouched(x.path) ? `<span class="ai" title="Edited by the agent in the chat panel">${ic('sparkles')}</span>` : ''}${x.staged ? '<span class="chip">staged</span>' : ''}${tlChip(x.path, by)}
+        <span class="spacer"></span>${a || d ? `<span class="ad"><span class="a">+${a}</span> <span class="d">−${d}</span></span>` : ''}${acts}</div>
+      <div class="rv-b">${body}</div></div>`;
+  }).join('');
+  const un = list.filter((x) => !x.staged && !x.secret), what = scope === 'latest' ? 'these' : 'all';
+  const now = `<div class="ex-crumb rv-bar"><div class="seg sm"><button data-rvscope="all" class="${scope === 'all' ? 'active' : ''}" title="Every uncommitted change in this worktree">All changes · ${all.length}</button><button data-rvscope="latest" class="${scope === 'latest' ? 'active' : ''}" ${MN.dock ? '' : 'disabled'}
+      title="${MN.dock ? 'Files changed in the latest turn of the agent in the chat panel' : 'Open an agent in the chat panel first'}">Latest · ${MN.dock ? latest.length : 0}</button></div>
+      <span class="meta">${A || D ? `<span class="a">+${A}</span> <span class="d">−${D}</span>` : ''}${list.length > REV_MAX ? ` · first ${REV_MAX} files` : ''}</span><span style="flex:1"></span>
+      ${un.some((x) => x.st !== 'U') ? `<button class="danger" data-rvall="discard" ${lock} title="Throw away the unstaged changes">Discard ${what}</button>` : ''}${un.length ? `<button data-rvall="stage" ${lock}>Stage ${what}</button>` : ''}
+      <button class="primary" data-rvall="commit" ${gitD?.readOnly ? 'disabled' : ''} title="Write the message and commit in Changes on the left">Commit…</button></div>
+    <div class="ex-body diff rv">${cards || `<div class="ex-empty" style="height:100%">${scope === 'latest'
+      ? 'The agent\'s latest turn has no uncommitted changes left in this worktree.'
+      : 'No uncommitted changes.<br>Files an agent edits show up here as it works.'}</div>`}</div>`;
+  const pick = tlPicked(), pane = pick?.t ? tlTurnPane(pick.t) : pick?.c ? tlCommitPane(pick.c) : pick?.p ? tlFilePane(pick.p) : now;
+  const html = `<div class="rv-wrap">${tlHtml(all.length, pick)}<div class="rv-pane">${pane}</div></div>`;
+  const prev = view.querySelector('.rv-pane .ex-body');
+  if (prev && html === REV.html) return;
+  const sel = pick?.k || 'now', top = prev && view.dataset.tlsel === sel ? prev.scrollTop : 0, tlTop = view.querySelector('.tl-list')?.scrollTop || 0;
+  REV.html = html;
+  view.className = 'ex-main-v';
+  view.style.cssText = 'display:flex;flex-direction:column;flex:1;min-height:0';
+  view.innerHTML = html;
+  view.dataset.tlsel = sel;
+  view.querySelector('.rv-pane .ex-body').scrollTop = top;
+  const tl = view.querySelector('.tl-list');
+  if (tl) tl.scrollTop = tlTop;
+}
+
+// ─── Dòng thời gian của Review: bây giờ → quá khứ ───────────────────────────
+// Mốc = một lượt agent có sửa tệp (câu hỏi, câu trả lời cuối, diff từng tệp — app cha đọc transcript,
+// timeline.js) hoặc một commit trên HEAD của worktree đang xem. Bấm một mốc xem tệp đổi lúc đó.
+const TL = { sel: 'now', turns: [], commits: [], key: '', at: 0, timer: 0, req: 0, reqKey: '', info: null, data: new Map(), more: false, flog: null, seen: new Set() };
+const TL_DIFFS = 40;
+const tlPaint = () => { if (exActive()?.kind === 'review') exRenderMain(true); };
+// Agent thuộc worktree đang xem: worktree khớp dài nhất với thư mục của agent, như cột Agents.
+function tlNodes() {
+  const roots = gkWtRoots(), root = gkCurRoot();
+  const own = (cwd) => roots.filter((w) => gkUnder(cwd, w.path)).sort((a, b) => b.path.length - a.path.length)[0];
+  return MN.agents.filter((a) => a.agent !== 'shell' && own(a.cwd)?.path === root).map((a) => a.nodeId);
+}
+// Gọi theo nhịp tab Review nạp lại; dồn về tối đa một lần mỗi 3 giây, lần bị dồn chạy ở cuối nhịp.
+async function tlLoad() {
+  if (!gitSel || !gitD || !gkIde()) return;
+  const key = EX.key;
+  if (key !== TL.key) { Object.assign(TL, { key, sel: 'now', turns: [], commits: [], info: null, at: 0, more: false, flog: null }); TL.data.clear(); TL.seen.clear(); }
+  const wait = TL.at + 3000 - Date.now();
+  clearTimeout(TL.timer);
+  if (wait > 0) { TL.timer = setTimeout(tlLoad, wait); return; }
+  TL.at = Date.now();
+  const nodes = MN.on ? tlNodes() : [];
+  if (nodes.length) { TL.reqKey = key; mnPost({ type: 'menorah:timeline-req', id: ++TL.req, nodes }); } else TL.turns = [];
+  try {
+    const r = await api('/api/git/graph?' + exQ() + '&head=1&n=60');
+    if (key === TL.key) TL.commits = r.commits || [];
+  } catch {}
+  if (TL.sel.startsWith('p:')) tlLoadFile(TL.sel.slice(2));
+  tlPaint();
+}
+// Lượt agent từ app cha: đường dẫn tuyệt đối → tương đối trong worktree; tệp ngoài worktree bỏ.
+function tlTake(m) {
+  if (m.id !== TL.req || TL.reqKey !== TL.key || !Array.isArray(m.turns)) return;
+  const root = gkCurRoot();
+  TL.turns = m.turns.filter((t) => t && typeof t.id === 'string' && Array.isArray(t.files)).map((t) => ({
+    ...t, prompt: String(t.prompt || ''), reply: String(t.reply || ''),
+    files: t.files.filter((f) => typeof f?.path === 'string' && Array.isArray(f.hunks)).map((f) => ({ ...f, path: normPath(f.path) }))
+      .filter((f) => f.path !== root && gkUnder(f.path, root)).map((f) => ({ ...f, path: f.path.slice(root.length + 1) })),
+  })).filter((t) => t.files.length);
+  tlPaint();
+}
+function tlItems() {
+  const f = gitUi.tlShow || 'all';
+  return [...(f === 'commits' ? [] : TL.turns.map((t) => ({ k: 't:' + t.id, ts: t.ts, t }))),
+    ...(f === 'agents' ? [] : TL.commits.map((c) => ({ k: 'c:' + c.h, ts: c.t * 1000, c })))].sort((a, b) => b.ts - a.ts);
+}
+// Mốc đang chọn; mốc đã biến mất (agent đóng, đổi bộ lọc) thì quay về Now.
+function tlPicked() {
+  if (TL.sel === 'now') return null;
+  if (TL.sel.startsWith('p:')) return { k: TL.sel, p: TL.sel.slice(2) };
+  return tlItems().find((x) => x.k === TL.sel) || (TL.sel = 'now', null);
+}
+function tlDay(ms) {
+  const d = new Date(ms), a = new Date(ms), b = new Date();
+  a.setHours(0, 0, 0, 0); b.setHours(0, 0, 0, 0);
+  const n = Math.round((b - a) / 86400000);
+  return n === 0 ? 'Today' : n === 1 ? 'Yesterday' : d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: n > 300 ? 'numeric' : undefined });
+}
+const tlHm = (ms) => new Date(ms).toTimeString().slice(0, 5);
+const tlMk = (agent) => `<span class="mk ${esc(agent)}">${{ claude: 'C', codex: 'X' }[agent] || '$'}</span>`;
+const tlAgent = (agent) => ({ claude: 'Claude', codex: 'Codex' }[agent] || 'Agent');
+const tlSum = (files) => files.reduce((s, f) => [s[0] + (f.add | 0), s[1] + (f.del | 0)], [0, 0]);
+const tlAd = (a, d) => (a || d ? `<span class="ad"><span class="a">+${a}</span> <span class="d">−${d}</span></span>` : '');
+const tlFiles = (n) => `${n} file${n === 1 ? '' : 's'}`;
+const tlN = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+const tlClip = (s, n) => (s.length > n ? s.slice(0, n - 1).trimEnd() + '…' : s);
+// Chữ thường từ Markdown cho tóm tắt một dòng: bỏ khối code, dấu nhấn, link, đầu mục.
+const tlNoCode = (s) => s.replace(/```[\s\S]*?(?:```|$)/g, '\n\n');
+const tlPlain = (s) => s.replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/^\s*(?:#+|>|[-*+]|\d+[.)])\s+/gm, '').replace(/\*\*|__|~~|`/g, '').replace(/\s+/g, ' ').trim();
+// Ý định của lượt (chưa có AI tóm tắt): đoạn đầu đủ ý trong câu trả lời cuối của agent —
+// bỏ qua câu mở đầu kiểu "Done." nếu phía sau có đoạn dài hơn.
+function tlGist(t) {
+  const ps = tlNoCode(t.reply).split(/\n\s*\n/).map(tlPlain);
+  const s = ps.find((p) => p.length >= 40) || ps.find((p) => p.length > 12) || '';
+  return tlClip(s, 240);
+}
+// Những dòng trong câu trả lời nhắc tên tệp: agent nói gì về tệp này.
+function tlWhy(t, path) {
+  const base = path.slice(path.lastIndexOf('/') + 1);
+  if (base.length < 3) return [];
+  const lit = base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), re = new RegExp(`(?:^|[^\\w.-])${lit}(?![\\w-]|\\.\\w)`), out = [];
+  for (const ln of tlNoCode(t.reply).split('\n')) {
+    if (!re.test(ln)) continue;
+    const s = tlClip(tlPlain(ln), 260);
+    if (s.length > base.length + 6 && !out.includes(s)) out.push(s);
+    if (out.length === 3) break;
+  }
+  return out;
+}
+// Tệp → các lượt đã sửa nó (mới nhất trước).
+function tlByPath() {
+  const by = new Map();
+  for (const t of [...TL.turns].sort((a, b) => b.ts - a.ts)) for (const f of t.files) by.has(f.path) ? by.get(f.path).push(t) : by.set(f.path, [t]);
+  return by;
+}
+function tlChip(path, by, always) {
+  const ts = by.get(path) || [];
+  if (!ts.length && !always) return '';
+  return `<span class="chip tl-fc" data-tl="p:${esc(path)}" title="Which agent turns and commits changed this file, and why">${[...new Set(ts.map((t) => t.agent))].map(tlMk).join('')}${ts.length ? tlN(ts.length, 'turn') : 'History'}</span>`;
+}
+function tlFileBody(f) {
+  const text = f.hunks.map((h) => `@@ -${h.oldStart | 0} +${h.newStart | 0} @@\n${h.lines.join('\n')}`).join('\n');
+  return f.nodiff ? '<div class="msg">Codex patch — open the chat to read it.</div>'
+    : !text.trim() ? '<div class="msg">No line changes recorded.</div>'
+    : gkDiffHtml(text) + (f.cut ? '<div class="gk-diff-cut">Diff too large — showing the first lines.</div>' : '');
+}
+function tlHtml(nWork, pick) {
+  if (gitUi.tlOff) return `<div class="rv-tl off" data-tl="show" title="Show the timeline">${ic('clock')}</div>`;
+  const f = gitUi.tlShow || 'all', sel = pick?.k || 'now', roots = gkWtRoots(), cur = gitSel?.wt || '';
+  // Đang xem câu chuyện một tệp: tô các mốc đã sửa tệp đó, làm mờ phần còn lại.
+  const fp = pick?.p, hit = fp ? new Set([...TL.turns.filter((t) => t.files.some((x) => x.path === fp)).map((t) => 't:' + t.id),
+    ...(TL.flog?.at === fp ? TL.flog.commits.map((c) => 'c:' + c.h) : [])]) : null;
+  let day = '', rows = `<div class="tl-it now${sel === 'now' ? ' on' : ''}" data-tl="now"><span class="tl-dot now"></span>
+    <div class="tl-1"><span class="nm">Now · working tree</span></div><div class="tl-3">${nWork ? `${nWork} uncommitted change${nWork === 1 ? '' : 's'}` : 'Nothing uncommitted'}</div></div>`;
+  for (const x of tlItems()) {
+    const d = tlDay(x.ts), on = (x.k === sel ? ' on' : '') + (hit?.has(x.k) ? ' hit' : '');
+    if (d !== day) { day = d; rows += `<div class="tl-day">${esc(d)}</div>`; }
+    if (x.t) {
+      const t = x.t, [a, dl] = tlSum(t.files), q = t.prompt.trim().split('\n')[0].slice(0, 160) || (t.images ? '(image)' : '(no text)'), g = tlGist(t);
+      rows += `<div class="tl-it turn${on}" data-tl="${esc(x.k)}" title="${esc(`${t.title}\n${t.prompt.slice(0, 500)}`)}"><span class="tl-dot ${esc(t.agent)}${t.running ? ' run' : ''}"></span>
+        <div class="tl-1">${tlMk(t.agent)}<span class="nm">${esc(t.title)}</span><span class="tm">${tlHm(t.ts)}</span></div>
+        <div class="tl-2">${esc(q)}</div>${g ? `<div class="tl-g" title="${esc(g)}">→ ${esc(g)}</div>` : ''}
+        <div class="tl-3">${tlFiles(t.files.length)} ${tlAd(a, dl)}${t.running ? ' · <span class="run">working…</span>' : ''}</div></div>`;
+    } else {
+      const c = x.c;
+      rows += `<div class="tl-it commit${on}" data-tl="${esc(x.k)}" title="${esc(`${c.h.slice(0, 10)} · ${c.a}\n${c.s}`)}"><span class="tl-dot commit"></span>
+        <div class="tl-1"><span class="nm">${esc(c.s || '(no message)')}</span><span class="tm">${tlHm(x.ts)}</span></div>
+        <div class="tl-3"><span class="sha">${esc(c.h.slice(0, 7))}</span> · ${esc(c.a)}</div></div>`;
+    }
+  }
+  const seg = (k, l) => `<button data-tl="f:${k}" class="${f === k ? 'active' : ''}">${l}</button>`;
+  const wt = roots.length > 1 ? `<select class="tl-wt" data-tlwt title="Worktree to review">${roots.map((w) => `<option value="${esc(w.wt)}"${w.wt === cur ? ' selected' : ''}>${esc(w.wt ? wtShort(w.wt) : 'main worktree')}</option>`).join('')}</select>` : '';
+  return `<div class="rv-tl"><div class="tl-h">${ic('clock')}<span class="t">Timeline</span><span style="flex:1"></span><button class="tl-x" data-tl="hide" title="Hide the timeline">${ic('x')}</button></div>
+    <div class="tl-tools">${wt}<div class="seg sm">${seg('all', 'All')}${seg('agents', 'Agents')}${seg('commits', 'Commits')}</div>${fp
+      ? `<div class="tl-focus">Changed <b title="${esc(fp)}">${esc(fp.slice(fp.lastIndexOf('/') + 1))}</b><span style="flex:1"></span><button class="tl-x" data-tl="now" title="Stop highlighting">${ic('x')}</button></div>` : ''}</div>
+    <div class="tl-list${fp ? ' focus' : ''}">${rows}${!TL.turns.length && f !== 'commits' && MN.on ? '<div class="tl-empty">Agent turns that edit files in this worktree show up here.</div>' : ''}</div></div>`;
+}
+// Khung tệp trong một mốc: như thẻ của Review, không có Stage/Discard; bấm tên tệp mở tab.
+function tlCard(k, path, st, chips, ad, body, attrs) {
+  const shut = REV.shut.has(k), i = path.lastIndexOf('/');
+  return `<div class="rv-file${shut ? ' shut' : ''}" data-rv="${esc(k)}" data-path="${esc(path)}" ${attrs}>
+    <div class="rv-h" title="Click to fold">${ic('down', 'gk-tw' + (shut ? ' shut' : ''))}<span class="st ${esc(st)}">${esc(st)}</span>
+      <span class="p" data-rvopen title="Open ${esc(path)} in a tab">${i >= 0 ? `<span class="d">${esc(path.slice(0, i + 1))}</span>` : ''}${esc(path.slice(i + 1))}</span>${chips}
+      <span class="spacer"></span>${ad}</div>
+    <div class="rv-b">${body}</div></div>`;
+}
+function tlTurnPane(t) {
+  const [A, D] = tlSum(t.files), work = new Set((gitD?.status.files || []).map((f) => f.path));
+  const bar = `<div class="ex-crumb rv-bar tl-bar"><button data-tl="now" title="Back to the uncommitted changes">← Now</button>${tlMk(t.agent)}<span class="tl-nm">${esc(t.title)}</span>
+    <span class="meta">${esc(tlDay(t.ts))} ${tlHm(t.ts)} · ${tlFiles(t.files.length)} ${tlAd(A, D)}${t.model ? ` · ${esc(t.model)}` : ''}${t.running ? ' · <span class="run">working…</span>' : ''}</span><span style="flex:1"></span>
+    ${MN.on ? `<button data-tl="chat" data-node="${esc(t.nodeId)}" title="Open this agent in the chat panel">Open chat</button>` : ''}</div>`;
+  const long = t.prompt.length + t.reply.length > 600 || (t.prompt + t.reply).split('\n').length > 12;
+  const intent = `<div class="tl-intent${TL.more || !long ? ' open' : ''}">
+    <div class="tl-q"><div class="lb">Asked${t.images ? ` · ${t.images} image${t.images > 1 ? 's' : ''}` : ''}</div><div class="tx">${esc(t.prompt.trim() || '(no text)')}</div></div>
+    ${t.reply ? `<div class="tl-r"><div class="lb">${tlAgent(t.agent)} said</div><div class="tx ex-md">${exMdHtml(t.reply.trim(), '')}</div></div>` : ''}
+    ${long ? `<button class="tl-more" data-tl="more">${TL.more ? 'Show less' : 'Show more'}</button>` : ''}</div>`;
+  const by = tlByPath();
+  const cards = t.files.map((f) => {
+    const why = tlWhy(t, f.path);
+    const body = (why.length ? `<div class="tl-why" title="What ${tlAgent(t.agent)} said about this file">${ic('sparkles')}<div>${why.map(esc).join('<br>')}</div></div>` : '') + tlFileBody(f);
+    const chips = (f.edits > 1 ? `<span class="chip">${f.edits} edits</span>` : '')
+      + (work.has(f.path) ? '<span class="chip warn" title="This file still has uncommitted changes in the working tree">uncommitted</span>' : '') + tlChip(f.path, by, true);
+    return tlCard(`tl:${t.id}:${f.path}`, f.path, f.st || 'M', chips, tlAd(f.add | 0, f.del | 0), body, 'data-tlfile');
+  }).join('');
+  return bar + `<div class="ex-body diff rv">${intent}${cards}</div>`;
+}
+function tlCommitPane(c) {
+  const inf = TL.info?.at === c.h ? TL.info : null, files = inf?.files || [], by = tlByPath();
+  let A = 0, D = 0;
+  const cards = files.slice(0, TL_DIFFS).map((f) => {
+    const r = TL.data.get(c.h + ':' + f.path);
+    let a = 0, d = 0;
+    for (const l of (r?.text || '').split('\n')) { if (l[0] === '+' && !l.startsWith('+++')) a++; else if (l[0] === '-' && !l.startsWith('---')) d++; }
+    A += a; D += d;
+    const body = r?.secret ? '<div class="msg secret">Secret file (.env, key, certificate…) — contents are not shown here.</div>'
+      : r?.err ? `<div class="msg">${esc(r.err)}</div>` : !r ? '<div class="msg">Loading…</div>'
+      : !r.text.trim() ? '<div class="msg">No content changes (binary file or mode change).</div>'
+      : gkDiffHtml(r.text) + (r.cut ? '<div class="gk-diff-cut">Diff too large — showing the first 400 KB.</div>' : '');
+    const chips = (f.from ? `<span class="chip" title="Renamed">from ${esc(f.from)}</span>` : '') + tlChip(f.path, by);
+    return tlCard(`tc:${c.h}:${f.path}`, f.path, (f.st || 'M')[0], chips, tlAd(a, d), body, `data-tlsha="${esc(c.h)}"`);
+  }).join('');
+  const bar = `<div class="ex-crumb rv-bar tl-bar"><button data-tl="now" title="Back to the uncommitted changes">← Now</button><span class="tl-nm">${esc(c.s || '(no message)')}</span>
+    <span class="meta">${esc(c.a)} · ${esc(gkFull(c.t))} · ${inf ? tlFiles(files.length) : '…'} ${tlAd(A, D)}</span><span style="flex:1"></span>
+    <button class="tl-sha" data-tl="sha" data-sha="${esc(c.h)}" title="Copy the full SHA">${esc(c.h.slice(0, 7))} ${ic('copy')}</button></div>`;
+  const head = inf?.body?.trim() ? `<div class="tl-intent open"><div class="tl-q"><div class="lb">Commit message</div><div class="tx">${esc(inf.body.trim())}</div></div></div>` : '';
+  const msg = !inf ? '<div class="msg">Loading…</div>' : inf.error ? `<div class="msg">${esc(inf.error)}</div>`
+    : !files.length ? '<div class="ex-empty" style="height:100%">This commit changes no files (an empty or merge commit).</div>'
+    : files.length > TL_DIFFS ? `<div class="gk-diff-cut">${files.length} files — showing the first ${TL_DIFFS}.</div>` : '';
+  return bar + `<div class="ex-body diff rv">${head}${cards}${msg}</div>`;
+}
+// Câu chuyện của một tệp: các lượt agent đã sửa nó (câu hỏi, agent nói gì về tệp, diff riêng tệp đó)
+// xen với các commit chạm vào tệp, mới nhất trước. Lượt nối với commit đầu tiên chạm tệp sau lượt đó.
+function tlFilePane(path) {
+  const ts = TL.turns.filter((t) => t.files.some((f) => f.path === path));
+  const fl = TL.flog?.at === path ? TL.flog : null, cs = fl?.commits || [], i = path.lastIndexOf('/');
+  const work = (gitD?.status.files || []).some((f) => f.path === path), oldest = [...cs].sort((a, b) => a.t - b.t);
+  const items = [...ts.map((t) => ({ ts: t.ts, t })), ...cs.map((c) => ({ ts: c.t * 1000, c }))].sort((a, b) => b.ts - a.ts);
+  const bar = `<div class="ex-crumb rv-bar tl-bar"><button data-tl="now" title="Back to the uncommitted changes">← Now</button><span class="tl-nm" title="${esc(path)}">${esc(path.slice(i + 1))}</span>
+    <span class="meta">${i >= 0 ? `${esc(path.slice(0, i + 1))} · ` : ''}${tlN(ts.length, 'agent turn')} · ${fl ? tlN(cs.length, 'commit') + (fl.more ? '+' : '') : '…'}</span><span style="flex:1"></span>
+    <button data-tl="open" data-path="${esc(path)}" title="Open the file in a tab">Open file</button></div>`;
+  let n = 0;
+  const rows = items.map((x) => {
+    if (x.c) {
+      const c = x.c, st = (c.st || 'M')[0], inTl = TL.commits.some((y) => y.h === c.h);
+      return `<div class="tl-se commit"><span class="tl-dot commit"></span>
+        <div class="tl-se-h"${inTl ? ` data-tl="c:${esc(c.h)}" title="Show this commit in the timeline"` : ''}><span class="nm">${esc(c.s || '(no message)')}</span><span class="tm">${esc(tlDay(x.ts))} ${tlHm(x.ts)}</span><span style="flex:1"></span>
+          <button data-tl="cd" data-sha="${esc(c.h)}" data-path="${esc(c.path || path)}" title="Open this file's diff in that commit">Diff</button></div>
+        <div class="tl-se-m"><code>${esc(c.h.slice(0, 7))}</code> · ${esc(c.a)} · ${{ A: 'added', D: 'deleted', R: 'renamed', C: 'copied' }[st] || 'modified'}${c.from ? ` from ${esc(c.from)}` : ''}</div></div>`;
+    }
+    const t = x.t, f = t.files.find((y) => y.path === path), why = tlWhy(t, path), g = why.length ? '' : tlGist(t), k = `tf:${t.id}:${path}`;
+    // Chỉ mở sẵn diff của lượt mới nhất; lượt cũ gập lại cho trang khỏi dài.
+    if (!TL.seen.has(k)) { TL.seen.add(k); if (n) REV.shut.add(k); }
+    n++;
+    // Commit tạo tệp không thể chứa lượt chỉ sửa tệp đó (thường do rebase đổi giờ) → bỏ qua.
+    const lands = oldest.find((c) => c.t * 1000 >= (t.end || t.ts) && (c.st !== 'A' || f.st === 'A'));
+    const link = lands ? `<span class="chip${TL.commits.some((y) => y.h === lands.h) ? ` tl-fc" data-tl="c:${esc(lands.h)}` : ''}" title="${esc(`Landed in — the first commit touching this file after the turn:\n${lands.s}`)}">→ <code>${esc(lands.h.slice(0, 7))}</code></span>`
+      : work && fl ? '<span class="chip warn" title="No commit touched this file after the turn, and it has uncommitted changes">uncommitted</span>' : '';
+    const q = t.prompt.trim() || (t.images ? '(image)' : '(no text)');
+    return `<div class="tl-se turn"><span class="tl-dot ${esc(t.agent)}${t.running ? ' run' : ''}"></span>
+      <div class="tl-se-h">${tlMk(t.agent)}<span class="nm" title="${esc(t.title)}">${esc(t.title)}</span><span class="tm">${esc(tlDay(x.ts))} ${tlHm(x.ts)}</span>${tlAd(f.add | 0, f.del | 0)}${link}<span style="flex:1"></span>
+        <button data-tl="t:${esc(t.id)}" title="See everything this turn changed">View turn</button></div>
+      <div class="tl-se-q" title="${esc(tlClip(q, 1500))}"><span class="lb">Asked</span>${esc(tlClip(q, 600))}</div>
+      ${why.length ? `<div class="tl-se-w"><span class="lb">${tlAgent(t.agent)} on this file</span>${why.map(esc).join(' · ')}</div>`
+        : g ? `<div class="tl-se-w"><span class="lb">Outcome</span>${esc(g)}</div>` : ''}
+      ${tlCard(k, path, f.st || 'M', f.edits > 1 ? `<span class="chip">${f.edits} edits</span>` : '', '', tlFileBody(f), 'data-tlfile')}</div>`;
+  }).join('');
+  const now = work ? `<div class="tl-se"><span class="tl-dot now"></span><div class="tl-se-h"><span class="nm">Uncommitted changes in the working tree</span><span style="flex:1"></span>
+    <button data-tl="now" title="Review the working tree">Review</button></div></div>` : '';
+  const msg = fl?.error ? `<div class="msg">${esc(fl.error)}</div>` : !fl ? '<div class="msg">Loading history…</div>'
+    : !items.length ? '<div class="ex-empty" style="height:100%">No agent turn or commit has changed this file yet.</div>' : '';
+  return bar + `<div class="ex-body diff rv"><div class="tl-fs">${now}${rows}</div>${msg}</div>`;
+}
+async function tlLoadFile(path) {
+  const key = TL.key, q = exQ();
+  q.set('path', path); q.set('n', 50);
+  let r;
+  try { r = await api('/api/git/file-log?' + q); } catch (e) { r = { commits: [], more: false, error: e.message }; }
+  if (key !== TL.key || TL.sel !== 'p:' + path) return;
+  TL.flog = { ...r, commits: r.commits || [], at: path };
+  tlPaint();
+}
+async function tlLoadCommit(sha) {
+  const key = TL.key, live = () => key === TL.key && TL.sel === 'c:' + sha;
+  if (TL.info?.at !== sha) {
+    TL.info = null;
+    const q = exQ(); q.set('sha', sha);
+    try { TL.info = { ...(await api('/api/git/commit?' + q)), at: sha }; } catch (e) { TL.info = { at: sha, error: e.message }; }
+    if (!live()) return;
+    tlPaint();
+  }
+  if (TL.data.size > 400) TL.data.clear();
+  const todo = (TL.info.files || []).slice(0, TL_DIFFS).filter((f) => !TL.data.has(sha + ':' + f.path));
+  let i = 0;
+  const next = async () => {
+    while (i < todo.length) {
+      const f = todo[i++], q = exQ();
+      q.set('sha', sha); q.set('path', f.path);
+      let r;
+      try { r = await api('/api/git/diff?' + q); } catch (e) { r = { err: e.message }; }
+      if (key !== TL.key) return;
+      TL.data.set(sha + ':' + f.path, r);
+    }
+  };
+  await Promise.all(Array.from({ length: 6 }, next));
+  if (live()) tlPaint();
+}
+function tlClick(b) {
+  const k = b.dataset.tl;
+  if (k === 'hide' || k === 'show') { gitUi.tlOff = k === 'hide'; gitSaveUi(); return tlPaint(); }
+  if (k.startsWith('f:')) { gitUi.tlShow = k.slice(2); gitSaveUi(); return tlPaint(); }
+  if (k === 'more') { TL.more = !TL.more; return tlPaint(); }
+  if (k === 'chat') return mnPost({ type: 'menorah:chat-agent', nodeId: b.dataset.node });
+  if (k === 'sha') return copy(b.dataset.sha, 'Commit SHA copied');
+  if (k === 'open') return exOpen({ id: 'f:' + b.dataset.path, kind: 'file', path: b.dataset.path });
+  if (k === 'cd') {
+    const p = b.dataset.path, sha = b.dataset.sha, c = TL.flog?.commits.find((x) => x.h === sha);
+    return exOpen({ id: `d:${sha}:${p}`, kind: 'diff', sha, path: p, file: p, subject: c?.s || '', author: c?.a || '', when: c?.t || 0 });
+  }
+  TL.sel = k; TL.more = false;
+  if (k.startsWith('c:')) tlLoadCommit(k.slice(2));
+  if (k.startsWith('p:')) { if (TL.flog?.at !== k.slice(2)) TL.flog = null; tlLoadFile(k.slice(2)); }
+  tlPaint();
+}
+function exCommit() {
+  exSide('scm');
+  setTimeout(() => { $('gkSum')?.focus(); }, 0);
 }
 
 // Tô màu cú pháp gọn: chú thích, chuỗi, số, từ khoá, thẻ HTML. Không phân tích ngữ pháp — đủ để đọc.
@@ -2588,14 +3531,21 @@ const exViewUrl = (p, rev = 'work') => `/git-view/${encodeURIComponent(gitSel.re
 
 function exRenderMain(keepTop) {
   const tabs = $('exTabs'), view = $('exView'), t = exActive();
-  tabs.innerHTML = EX.tabs.map((x) => {
+  tabs.innerHTML = exTabsAll().map((x) => {
+    if (x.kind === 'review') {
+      const n = rvEntries().all.length;
+      return `<div class="ex-tab${x.id === EX.active ? ' on' : ''}" data-tab="review" title="Every uncommitted change, file by file">${ic('sparkles')}<span class="nm">Review</span>${n ? `<span class="sha">${n}</span>` : ''}</div>`;
+    }
     const m = exMark(EX.xy[exFileOf(x)]);
     const label = x.kind === 'file' ? exName(x.path) : exName(x.path);
     const sub = x.kind === 'diff' ? `<span class="sha">${x.sha.slice(0, 7)}</span>` : x.kind === 'work' ? '<span class="sha">working</span>' : '';
-    return `<div class="ex-tab${x.id === EX.active ? ' on' : ''}${m && x.kind === 'file' ? ' ex-' + m : ''}" data-tab="${esc(x.id)}" title="${esc(x.path)}${x.kind === 'diff' ? '\n' + esc(x.subject || '') : ''}">
+    return `<div class="ex-tab${x.id === EX.active ? ' on' : ''}${m && x.kind === 'file' ? ' ex-' + m : ''}${edDirty(x) ? ' dirty' : ''}" data-tab="${esc(x.id)}" title="${esc(x.path)}${x.kind === 'diff' ? '\n' + esc(x.subject || '') : ''}">
       ${ic(x.kind === 'file' ? 'file' : 'graph')}<span class="nm" ${x.preview ? 'style="font-style:italic"' : ''}>${esc(label)}</span>${sub}<button class="x" data-close="${esc(x.id)}" title="Close">${ic('x')}</button></div>`;
   }).join('');
   tabs.querySelector('.ex-tab.on')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  if (edCan(t)) return edRender(view, t, keepTop);
+  delete view.dataset.ed;
+  if (t?.kind === 'review') return exRenderReview(view);
   if (!t) {
     view.className = 'ex-empty';
     view.innerHTML = EX.files ? `<div>Pick a file on the left to read it here.<br>Press <kbd>⌘P</kbd> to jump to a file by name.<br><br><span style="font-size:12px">${EX.files.length.toLocaleString('en')} files${Object.keys(EX.xy).length ? ` · ${Object.keys(EX.xy).length} changed` : ''}</span></div>` : '';
@@ -2639,6 +3589,7 @@ function exRenderMain(keepTop) {
 
 // ── Lịch sử tệp (cột phải) ──
 async function exLoadLog(quiet) {
+  if (gkIde()) return;   // IDE không có cột lịch sử
   const f = exFileOf(exActive()) || '';
   EX.logFor = f;
   if (!f) { EX.log = null; return exRenderLog(); }
@@ -2680,7 +3631,44 @@ function exRenderLog() {
 // ── Sự kiện chế độ Files ──
 for (const [k, i] of [['term', 'term'], ['reload', 'reload'], ['fold', 'fold']]) document.querySelector(`.ex-side [data-ex=${k}]`).innerHTML = ic(i);
 function exTerminal(cwd) { mnPost({ type: 'menorah:new-agent', agent: 'shell', cwd }); }
+$('gkEx').addEventListener('change', (e) => {
+  const w = e.target.closest('[data-tlwt]');
+  if (w && gitSel) gkSelect(gitSel.repo, w.value);
+});
 $('gkEx').addEventListener('click', (e) => {
+  if (e.target.closest('#exScm, #exAg, .ed-host')) return;   // cột WIP và Agents có trình xử lý riêng
+  const sd = e.target.closest('[data-iside]');
+  if (sd) return exSide(sd.dataset.iside);
+  const tb = e.target.closest('[data-tl]');
+  if (tb) return tlClick(tb);
+  const rs = e.target.closest('[data-rvscope]');
+  if (rs) { if (!rs.disabled) { REV.scope = rs.dataset.rvscope; exLoadReview(); } return; }
+  const ra = e.target.closest('[data-rvall]');
+  if (ra) {
+    if (ra.disabled) return;
+    if (ra.dataset.rvall === 'commit') return exCommit();
+    const { scope, list } = rvEntries();
+    return gitAct(ra.dataset.rvall, scope === 'all' ? { all: true } : { paths: [...new Set(list.filter((x) => !x.staged && !x.secret).map((x) => x.path))] });
+  }
+  const rf = e.target.closest('.rv-file');
+  if (rf) {
+    const b = e.target.closest('[data-rvact]');
+    if (b) return b.disabled ? null : gitAct(b.dataset.rvact, { paths: [rf.dataset.path] });
+    if (e.target.closest('[data-rvopen]')) {
+      const p = rf.dataset.path, sha = rf.dataset.tlsha, c = sha && TL.commits.find((x) => x.h === sha);
+      if (c) return exOpen({ id: `d:${sha}:${p}`, kind: 'diff', sha, path: p, file: p, subject: c.s, author: c.a, when: c.t }, e.detail > 1);
+      if (rf.hasAttribute('data-tlfile')) return exOpen({ id: 'f:' + p, kind: 'file', path: p }, e.detail > 1);
+      return exOpenWork(p, rf.dataset.staged === '1', e.detail > 1);
+    }
+    if (e.target.closest('.rv-h')) {
+      const k = rf.dataset.rv, shut = !REV.shut.has(k);
+      shut ? REV.shut.add(k) : REV.shut.delete(k);
+      rf.classList.toggle('shut', shut);
+      rf.querySelector('.rv-h .gk-tw')?.classList.toggle('shut', shut);
+      REV.html = '';
+    }
+    return;
+  }
   const mv = e.target.closest('[data-exmd]');
   if (mv) { gitUi.mdView = mv.dataset.exmd; gitSaveUi(); return exRenderMain(); }
   // Liên kết trong bản xem trước Markdown: #mục cuộn tới tiêu đề, đường dẫn trong repo mở ở tab.
@@ -2707,12 +3695,16 @@ $('gkEx').addEventListener('click', (e) => {
     if (k === 'copy' && t) return copy(exRoot() ? join2(exRoot(), t.path) : t.path, 'Path copied');
     if (k === 'web' && t) return window.open(exViewUrl(t.path), '_blank');
     if (k === 'openfile' && t) return exOpen({ id: 'f:' + t.file, kind: 'file', path: t.file });
+    if (k === 'save' && t) return edSave(t);
+    if (k === 'edforce' && t) return edSave(t, true);
+    if (k === 'edreload' && t) return edReload(t);
+    if (k === 'edrevert' && t) return edRevert(t);
     return;
   }
   const close = e.target.closest('[data-close]');
   if (close) { e.stopPropagation(); return exClose(close.dataset.close); }
   const tab = e.target.closest('[data-tab]');
-  if (tab) { const t = EX.tabs.find((x) => x.id === tab.dataset.tab); return t && t.id !== EX.active && exShow(t); }
+  if (tab) { const t = exTabsAll().find((x) => x.id === tab.dataset.tab); return t && t.id !== EX.active && exShow(t); }
   const d = e.target.closest('[data-dir]');
   if (d) { const p = d.dataset.dir; EX.open.has(p) ? EX.open.delete(p) : EX.open.add(p); exSave(); return exRenderSide(); }
   const f = e.target.closest('[data-file]');
@@ -2733,6 +3725,7 @@ $('gkEx').addEventListener('click', (e) => {
 // Bấm đúp tab đang xem tạm thì giữ lại; bấm giữa (nút cuộn) đóng tab như VS Code.
 $('exTabs').addEventListener('dblclick', (e) => { const t = EX.tabs.find((x) => x.id === e.target.closest('[data-tab]')?.dataset.tab); if (t?.preview) { t.preview = false; exRenderMain(true); exSave(); } });
 $('exTabs').addEventListener('auxclick', (e) => { const tab = e.target.closest('[data-tab]'); if (tab && e.button === 1) exClose(tab.dataset.tab); });
+$('exTabs').addEventListener('contextmenu', (e) => { const tab = e.target.closest('[data-tab]'); if (tab) { e.preventDefault(); exTabMenu(e, tab.dataset.tab); } });
 $('exTree').addEventListener('contextmenu', (e) => {
   const row = e.target.closest('[data-dir], [data-file]');
   if (!row) return;
@@ -2947,7 +3940,7 @@ async function gkBranchDialog({ base, sha, wtOnly }) {
     html: `<div class="gk-form">
       <div class="row"><span class="lbl">Type</span><div class="seg" id="bdKind">
         <button data-kind="feat" class="${f.kind === 'feat' ? 'active' : ''}">feat</button><button data-kind="hotfix" class="${f.kind === 'hotfix' ? 'active' : ''}">hotfix</button></div></div>
-      <div class="row"><span class="lbl">Short name</span><input type="text" id="bdSlug" placeholder="e.g. git-panel" autocomplete="off" spellcheck="false" /></div>
+      <div class="row"><span class="lbl">Short name</span><input type="text" id="bdSlug" data-novn placeholder="e.g. git-panel" autocomplete="off" spellcheck="false" /></div>
       <div class="row"><span class="lbl">From</span>${sha ? `<code>${sha.slice(0, 8)}</code><span class="sub" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(subj || '')}</span>`
         : `<select id="bdBase"><optgroup label="Local">${opt(local)}</optgroup><optgroup label="Remote">${opt(remote)}</optgroup></select>`}</div>
       ${wtOnly ? `<div class="gd-check"><span>A new branch is checked out in <code>.worktrees/&lt;short-name&gt;</code> of the main worktree. Every open tree keeps its branch.</span></div>`
@@ -2994,7 +3987,7 @@ async function gkAddExtraDialog() {
   const ok = await gitDialog({
     title: 'Add repository outside the project', ok: 'Add', focus: '#exPath',
     html: `<div class="sub">Pick the repository folder (the one that holds <code>.git</code>), or paste its absolute path, e.g. <code>~/code/my-app</code>.</div>
-      <div class="gk-form"><div class="row"><input type="text" id="exPath" placeholder="~/code/my-app" autocomplete="off" spellcheck="false" />
+      <div class="gk-form"><div class="row"><input type="text" id="exPath" data-novn placeholder="~/code/my-app" autocomplete="off" spellcheck="false" />
         <button type="button" id="exPick">Browse…</button></div></div>`,
     mount: (root, okB) => {
       const pathI = root.querySelector('#exPath');
@@ -3022,7 +4015,7 @@ async function gkAddGroupDialog() {
     title: 'Add project folder', ok: 'Add project', focus: '#gpPath',
     html: `<div class="sub">Every git repository inside the folder (up to 4 levels deep) is listed under one project name. Nothing on disk is changed.</div>
       <div class="gk-form">
-        <div class="row"><input type="text" id="gpPath" placeholder="~/code" autocomplete="off" spellcheck="false" />
+        <div class="row"><input type="text" id="gpPath" data-novn placeholder="~/code" autocomplete="off" spellcheck="false" />
           <button type="button" id="gpPick">Browse…</button><button type="button" id="gpScan">Scan</button></div>
         <div class="gp-res" id="gpRes"></div>
         <div class="row"><span class="lbl">Name</span><input type="text" id="gpName" maxlength="60" autocomplete="off" spellcheck="false" placeholder="e.g. My product" /></div>
@@ -3183,6 +4176,7 @@ const gdPl = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 function gkSetView(v) {
   gitView = v;
   $('panelGit').classList.toggle('dash', v === 'projects');
+  mnMode();
   gitSaveSel();
   gkRenderBar();
   if (v === 'projects') gkLoadDash();
@@ -3753,8 +4747,8 @@ document.addEventListener('keydown', (e) => {
     if (gitDiffOpen) return gkCloseDiff();
   }
   // Chế độ Files: ⌘P tìm tệp theo tên như VS Code; mũi tên không đi qua đồ thị đang ẩn.
-  if (gitUi.mode === 'files' && gitView === 'repo') {
-    if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'p') { e.preventDefault(); $('exFilter').focus(); $('exFilter').select(); }
+  if (exOn() && gitView === 'repo') {
+    if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'p') { e.preventDefault(); if (gkIde()) exSide('files'); $('exFilter').focus(); $('exFilter').select(); }
     return;
   }
   if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && !e.target.closest('input, textarea, select')) {
